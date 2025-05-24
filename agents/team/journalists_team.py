@@ -33,8 +33,15 @@ class TeamOfJournalists(BaseModel):
         description="A list of people giving their input on the topic.",
     )
 
+
 class JournalistsSetup(TypedDict):
-    topic: str                  # What this team is researching or discussing
-    number_of_journalists: int     # How many journalists we want to include
-    editor_feedback: str         # Notes or feedback from a human reviewer
-    journalists: List[Journalist]     # The current list of journalists
+    topic: str
+    title: str
+    type: str  # Guide, Review, Comparison, etc.
+    keywords: List[str]
+    team_title: List[str]  # Optional
+    audience: str
+    prompt: str  # Custom injected instruction
+    number_of_journalists: int
+    editor_feedback: str
+    journalists: List[Journalist]

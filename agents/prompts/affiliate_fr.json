@@ -1,0 +1,58 @@
+{
+  "title": "{{title}}",
+  "introduction": {
+    "paragraphs": [
+      "Intro paragraph explaining what the reader will learn and why the subject matters.",
+      "Explain how the selection was made and what criteria were used."
+    ],
+    "bullets": [
+      "Highlight the best high-end, mid-range, and budget product briefly"
+    ]
+  },
+  "comparisons": [
+    {
+      "title": "Meilleur haut de gamme",
+      "product": "Product name",
+      "description": "Explain why this is the best high-end product with 3–4 sentences.",
+      "image_url": "https://...",
+      "pros": ["Pro 1", "Pro 2"],
+      "cons": ["Con 1"]
+    },
+    {
+      "title": "Meilleur milieu de gamme",
+      "product": "Product name",
+      "description": "Explain why this is the best mid-range product.",
+      "image_url": "https://...",
+      "pros": ["Pro 1", "Pro 2"],
+      "cons": ["Con 1"]
+    },
+    {
+      "title": "Meilleur pas cher",
+      "product": "Product name",
+      "description": "Explain why this is the best affordable choice.",
+      "image_url": "https://...",
+      "pros": ["Pro 1", "Pro 2"],
+      "cons": ["Con 1"]
+    }
+  ],
+  "notable_mentions": [
+    {
+      "title": "Mention spéciale pour le sport",
+      "description": "Product that’s best suited for athletes, outdoor, or gym."
+    },
+    {
+      "title": "Mention spéciale pour les pros",
+      "description": "Product for professional use or special features."
+    }
+  ],
+  "updates": [
+    "**Current Month** 2025: Note if a new model was added or prices have changed."
+  ],
+  "conclusion": {
+    "summary": "Wrap-up paragraph that restates the value of the article and who should buy what.",
+    "recommendations": [
+      "Overall favorite: Product name",
+      "Best value for money: Product name"
+    ]
+  }
+}
