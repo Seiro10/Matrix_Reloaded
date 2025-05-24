@@ -1,5 +1,7 @@
 from dotenv import load_dotenv
+import os
 load_dotenv()
+import ast
 
 from interview.interview import InterviewSession
 from langchain_core.messages import AIMessage, HumanMessage, SystemMessage
@@ -31,7 +33,11 @@ Keep asking until you understand the topic fully.
 
 When you're done, say: "Thank you so much for your help!" — this will end the interview.
 
-Stay in character throughout the conversation.""")
+Stay in character throughout the conversation.
+Never use code-like expressions such as `unicode(...)`. Just output plain values.
+
+
+""")
 
     # Generate the question using the LLM
     journalist_question = llm.invoke([system_msg] + state["messages"])
@@ -63,6 +69,7 @@ Format:
 8. Reference documents using numbers like [1], [2].
 9. List those sources at the bottom.
 10. For example, write: [1] assistant/docs/mcp_guide.pdf, page 7.
+11. Never use code-like expressions such as `unicode(...)`. Just output plain values.
 
 Example:
 Membrane keyboards offer a quiet, affordable alternative to mechanical models, while remaining high-performance for gamers. In this guide, we present a selection of the best membrane keyboards, combining comfort, responsiveness and attractive prices. Whether you're an occasional gamer or an enthusiast looking for a smooth, quiet keyboard, you'll find options here to suit your needs.
@@ -89,72 +96,60 @@ def save_interview(state: InterviewSession):
 
 def write_report_section(state: InterviewSession):
     """
-    Writes a short report section based on the interview transcript,
-    supported by any referenced source documents.
+    Writes a structured report based on a JSON layout (e.g., ranking article).
     """
+    report_structure = state.get("report_structure")
 
     system_msg = SystemMessage(content=f"""
-You are a technical writer creating a short report based on an interview with an expert.
+    
+## ROLE:
+You are a professional editorial writer specializing in product comparison articles, similar to those found on RTINGS.com.
 
-Your job is to write a clear, engaging section using the interview transcript as the main source, 
-while using the attached documents only to support factual claims with proper citations.
+## GOAL:
+Generate a structured article using the provided structure and layout. Your writing must be factual, objective, and informative. The output will be used to publish directly to a WordPress blog.
 
-Here’s how to structure the report using Markdown:
+## INSTRUCTIONS:
+- Write in professional and journalistic style.
+- Maintain a neutral tone: no hype, no marketing fluff.
+- Never use long dashes (—). Replace with commas, semicolons, or periods.
+- Follow the JSON format exactly.
+- Use interview content as your main source.
+- Use the documents only to back up claims (cite with [1], [2] if needed).
+- Use simple, engaging language fit for the audience: {state.get("audience", "general readers")}
+- Never use code-like expressions such as `unicode(...)`. Just output plain values.
 
-## Title  
-### Summary  (about 300 words)
-### First choice (about 400 words)
-### Second choice (about 400 words)
-### Third choice (about 400 words)
-...
-### Conclusion (about 300 words)
-### FAQ
-### Sources
-
-Writing instructions:
-1. Use the interview transcript as your **primary source of insight**.
-2. If a factual claim in the interview **can be confirmed by a document**, cite it using [1], [2], etc.
-3. If a fact appears in the interview **but not in the documents**, it's okay to include it — just treat it as part of the expert's opinion.
-4. Do **not** invent or assume anything beyond the transcript and the documents.
-5. Keep the tone clear and concise. Avoid naming the expert or journalist.
-7. In the “Sources” section, list each unique document used (no duplicates).
-8. Use full links or filenames (e.g., [1] https://example.com or assistant/docs/mcp_guide.pdf, page 7).
-
-Final review:
-- Ensure Markdown structure is followed
-- Make the title engaging and relevant to this focus area:
-  **{state["journalist"].about}**""")
-
-    # Provide both the documents and interview to the LLM
-    user_msg = HumanMessage(content=f"""
-Here are the materials you should use:
-
---- INTERVIEW TRANSCRIPT ---
-{state["full_conversation"]}
-
---- DOCUMENTS FOR CITATION ---
-{state["sources"]}
 """)
 
-    report = llm.invoke([system_msg, user_msg])
-    return {"report_sections": [report.content]}
+    user_msg = HumanMessage(content=f"""
+--- STRUCTURE ---
+{report_structure}
+
+--- INTERVIEW TRANSCRIPT ---
+{state['full_conversation']}
+
+--- DOCUMENTS ---
+{state['sources']}
+""")
+
+    response = llm.invoke([system_msg, user_msg])
+    return {"report_sections": [response.content]}
 
 
 def continue_or_finish(state: InterviewSession, name: str = "expert"):
-    """Decides if the interview should continue or end after each answer."""
-
     messages = state["messages"]
     max_turns = state.get("max_turns", 2)
-
-    # Count how many times the expert has responded
     answers = [m for m in messages if isinstance(m, AIMessage) and m.name == name]
 
+    print(f"[DEBUG] Expert answers so far: {len(answers)} / {max_turns}")
+
     if len(answers) >= max_turns:
+        print("[DEBUG] Max turns reached, saving interview.")
         return "save_interview"
 
-    # Check if the last journalist question said "thank you"
     last_question = messages[-2]
     if "Thank you so much for your help" in last_question.content:
+        print("[DEBUG] Detected thank you message. Ending interview.")
         return "save_interview"
 
+    print("[DEBUG] Continuing interview.")
     return "ask_question"

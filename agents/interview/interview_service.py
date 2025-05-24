@@ -2,6 +2,7 @@ from langgraph.graph import START, END, StateGraph
 from langgraph.checkpoint.memory import MemorySaver
 from langchain_core.messages import SystemMessage
 from IPython.display import Image, display
+import ast
 
 from interview.interview import InterviewSession
 from interview.interview_nodes import (
@@ -31,22 +32,20 @@ interview_graph_builder.add_edge("ask_question", "search_wikipedia")
 interview_graph_builder.add_edge("search_web", "answer_question")
 interview_graph_builder.add_edge("search_wikipedia", "answer_question")
 
-# Conditional loop: continue interview or end it
+# Conditional loop: continue or save
 interview_graph_builder.add_conditional_edges(
     "answer_question",
     continue_or_finish,
     ["ask_question", "save_interview"]
 )
 
+# After saving the conversation, write the report
 interview_graph_builder.add_edge("save_interview", "write_report_section")
 interview_graph_builder.add_edge("write_report_section", END)
 
-# Step 4: Compile and export the graph
+# Step 4: Compile the graph
 memory = MemorySaver()
-
 interview_graph = interview_graph_builder.compile(
     checkpointer=memory
 ).with_config(run_name="journalists_interview_experts")
 
-# Optional: visualize graph if using notebooks
-# display(Image(interview_graph.get_graph().draw_mermaid_png()))
