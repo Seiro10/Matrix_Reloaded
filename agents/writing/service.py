@@ -1,12 +1,9 @@
-from langgraph.graph import StateGraph
-from core.state import GraphState
-from agents.writing.nodes import writer_node
+from langgraph.graph import StateGraph, END
+from writing.writer_nodes import merge_sections_node
 
-def writing_node_service():
-    builder = StateGraph(GraphState)
-    builder.add_node("writing", writer_node())
+builder = StateGraph(dict)
+builder.add_node("merge_sections", merge_sections_node)
+builder.set_entry_point("merge_sections")
+builder.add_edge("merge_sections", END)
 
-    builder.set_entry_point("writing")
-    graph = builder.compile()
-
-    return graph
+writer_graph = builder.compile()

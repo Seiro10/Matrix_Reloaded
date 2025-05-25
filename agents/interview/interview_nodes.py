@@ -65,20 +65,9 @@ Format:
 4. Give your 5 choices and expand each of them based on the sources.
 5. For each of them, explain in which aspect they are the best, and why the reader should consider buying it.
 6. Write a conclusion to helps the reader with his decision
-7. Write 2-5 questions/answers as a FAQ to answers common questions about the topic.
 8. Reference documents using numbers like [1], [2].
 9. List those sources at the bottom.
 10. For example, write: [1] assistant/docs/mcp_guide.pdf, page 7.
-11. Never use code-like expressions such as `unicode(...)`. Just output plain values.
-
-Example:
-Membrane keyboards offer a quiet, affordable alternative to mechanical models, while remaining high-performance for gamers. In this guide, we present a selection of the best membrane keyboards, combining comfort, responsiveness and attractive prices. Whether you're an occasional gamer or an enthusiast looking for a smooth, quiet keyboard, you'll find options here to suit your needs.
-1. Razer Ornata V3 TKL
-The Razer Ornata V3 TKL is a compact mechanical keyboard designed for gamers and users looking for a smooth, responsive typing experience...2. Turtle Beach Magma Le Turtle Beach Magma est un clavier gaming à membrane conçu pour offrir une expérience de jeu agréable à un prix abordable..
-3. G213 Prodigy
-The Logitech G213 RGB is a membrane gaming keyboard designed to offer a good compromise between performance and price...
-...
-Conclusion
 
 """)
     expert_reply = llm.invoke([system_msg] + state["messages"])
@@ -98,38 +87,39 @@ def write_report_section(state: InterviewSession):
     """
     Writes a structured report based on a JSON layout (e.g., ranking article).
     """
+
     report_structure = state.get("report_structure")
 
     system_msg = SystemMessage(content=f"""
-    
-## ROLE:
-You are a professional editorial writer specializing in product comparison articles, similar to those found on RTINGS.com.
 
-## GOAL:
-Generate a structured article using the provided structure and layout. Your writing must be factual, objective, and informative. The output will be used to publish directly to a WordPress blog.
+    ## ROLE:
+    You are a professional editorial writer specializing in product comparison articles, similar to those found on RTINGS.com.
 
-## INSTRUCTIONS:
-- Write in professional and journalistic style.
-- Maintain a neutral tone: no hype, no marketing fluff.
-- Never use long dashes (—). Replace with commas, semicolons, or periods.
-- Follow the JSON format exactly.
-- Use interview content as your main source.
-- Use the documents only to back up claims (cite with [1], [2] if needed).
-- Use simple, engaging language fit for the audience: {state.get("audience", "general readers")}
-- Never use code-like expressions such as `unicode(...)`. Just output plain values.
+    ## GOAL:
+    Generate a structured article using the provided structure and layout. Your writing must be factual, objective, and informative. The output will be used to publish directly to a WordPress blog.
 
-""")
+    ## INSTRUCTIONS:
+    - Write in professional and journalistic style.
+    - Maintain a neutral tone: no hype, no marketing fluff.
+    - Never use long dashes (—). Replace with commas, semicolons, or periods.
+    - Follow the JSON format exactly.
+    - Use interview content as your main source.
+    - Use the documents only to back up claims (cite with [1], [2] if needed).
+    - Use simple, engaging language fit for the audience: {state.get("audience", "general readers")}
+    - Never use code-like expressions such as `unicode(...)`. Just output plain values.
+
+    """)
 
     user_msg = HumanMessage(content=f"""
---- STRUCTURE ---
-{report_structure}
+    --- STRUCTURE ---
+    {report_structure}
 
---- INTERVIEW TRANSCRIPT ---
-{state['full_conversation']}
+    --- INTERVIEW TRANSCRIPT ---
+    {state['full_conversation']}
 
---- DOCUMENTS ---
-{state['sources']}
-""")
+    --- DOCUMENTS ---
+    {state['sources']}
+    """)
 
     response = llm.invoke([system_msg, user_msg])
     return {"report_sections": [response.content]}

@@ -71,21 +71,17 @@ def markdown_to_html(markdown_content: str) -> str:
 # -----------------------------
 # 3. Create Article on WordPress (POST)
 # -----------------------------
-def post_article_to_wordpress(article_json: dict, jwt_token: str) -> str:
+def post_article_to_wordpress(article_json: dict, jwt_token: str, html: str = None) -> str:
     post_url = "https://stuffgaming.fr/wp-json/wp/v2/posts"
     headers = {
         "Authorization": f"Bearer {jwt_token}",
         "Content-Type": "application/json"
     }
 
-    # Build content
-    markdown = render_report_to_markdown(article_json)
-    html = markdown_to_html(markdown)
-
     payload = {
         "title": article_json["title"],
         "slug": slugify(article_json["title"]),
-        "content": html,
+        "content": html or "",  # fallback
         "status": "private"
     }
 
