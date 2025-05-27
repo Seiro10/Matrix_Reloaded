@@ -1,7 +1,14 @@
 from dotenv import load_dotenv
 import os
-load_dotenv()
 
+# ✅ Load .env from current directory
+env_path = os.path.join(os.path.dirname(__file__), '..', '.env')
+load_dotenv(dotenv_path=env_path, override=True)
+
+# 🧪 Debug: show the loaded value
+print("[DEBUG] USERNAME_WP =", os.getenv("USERNAME_WP"))
+
+import os
 import json
 import requests
 import markdown
@@ -14,16 +21,21 @@ import ast
 def render_report_to_markdown(data: dict) -> str:
     md = f"# {data['title']}\n\n"
 
-    md += "## Introduction\n"
-    for para in data['introduction'].get('paragraphs', []):
-        md += f"{para}\n\n"
-    for bullet in data['introduction'].get('bullets', []):
+    # ✏️ Introduction sans titre de section
+    intro = data.get('introduction', {})
+    if intro.get('teaser'):
+        md += f"{intro['teaser']}\n\n"
+    for bullet in intro.get('bullets', []):
         md += f"- {bullet}\n"
+    if intro.get('hook2'):
+        for hook2 in intro['hook2']:
+            md += f"\n{hook2}\n"
     md += "\n"
 
+    # 🖱️ Comparisons
     for item in data.get('comparisons', []):
         md += f"### {item['title']}: {item['product']}\n\n"
-        md += f"**{item['description']}**\n\n"
+        md += f"{item['description']}\n\n"
         for i in range(1, 5):
             para = item.get(f"paragraph{i}")
             if para:
@@ -34,17 +46,20 @@ def render_report_to_markdown(data: dict) -> str:
             md += "**Cons:**\n" + "".join(f"- ❌ {c}\n" for c in item["cons"]) + "\n"
         md += "\n"
 
+    # 📌 Notable Mentions
     if data.get("notable_mentions"):
         md += "## Notable Mentions\n"
         for mention in data["notable_mentions"]:
             md += f"**{mention['title']}**: {mention['description']}\n\n"
 
+    # 🔄 Updates
     if data.get("updates"):
         md += "## Updates\n"
         for update in data["updates"]:
             md += f"- {update}\n"
         md += "\n"
 
+    # ✅ Conclusion
     if data.get("conclusion"):
         md += "## Conclusion\n"
         md += f"{data['conclusion']['summary']}\n\n"
@@ -52,6 +67,7 @@ def render_report_to_markdown(data: dict) -> str:
             md += f"- {rec}\n"
         md += "\n"
 
+    # ❓ FAQ
     if data.get("faq"):
         md += "## FAQ\n"
         if data.get("faq_description"):
@@ -60,6 +76,7 @@ def render_report_to_markdown(data: dict) -> str:
             md += f"**Q: {q['question']}**\n\nA: {q['answer']}\n\n"
 
     return md.strip()
+
 
 # -----------------------------
 # 2. Markdown → HTML

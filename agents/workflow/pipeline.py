@@ -6,9 +6,12 @@ from langchain_core.messages import HumanMessage
 from utils.wordpress import get_jwt_token, post_article_to_wordpress
 from utils.wordpress import render_report_to_markdown, markdown_to_html
 from utils.prompts import load_prompt_template
+from writing.writer_nodes import optimize_article
 from uuid import uuid4
 import os
 import json
+import re
+
 
 async def run_full_article_pipeline(row):
     thread_id = f"article-{row['Title'].replace(' ', '-').lower()}"
@@ -56,6 +59,11 @@ async def run_full_article_pipeline(row):
         "report_structure": report_structure
     }
 
+    # 💾 Save the merge_state for testing purposes
+    with open("test_merge_input.json", "w", encoding="utf-8") as f:
+        json.dump(merge_state, f, indent=2, ensure_ascii=False)
+        print("[DEBUG] Saved merge state to test_merge_input.json")
+
     final_output = writer_graph.invoke(merge_state)
 
     # Step 4: Authenticate with WordPress
@@ -66,20 +74,32 @@ async def run_full_article_pipeline(row):
     # Step 5: Parse and publish
     article = final_output.get("article")
 
-    if not article:
+    optimized_article = optimize_article(article)
+
+    if not optimized_article:
         print(f"[ERROR] ❌ 'article' field is missing or empty in writer output: {final_output}")
         return None
 
-    if isinstance(article, str):
-        print(f"[DEBUG] Raw article string: {article[:200]}...")
-        html = markdown_to_html(article)
-        post_id = post_article_to_wordpress(
-            {"title": row["Title"]},
-            token,
-            html=html
-        )
-        return post_id
+    if isinstance(optimized_article, str):
+        print(f"[DEBUG] Raw article string: {optimized_article[:200]}...")
 
-    # Fallback in case article is not a string
+        # Clean up formatting markers (```json etc.)
+        clean_article = re.sub(r"^```json|```$", "", optimized_article.strip(), flags=re.MULTILINE).strip()
+
+        # Replace en dash with comma
+        clean_article = clean_article.replace("–", ",")
+
+        try:
+            parsed_article = json.loads(clean_article)
+            markdown = render_report_to_markdown(parsed_article)
+            html = markdown_to_html(markdown)
+            post_id = post_article_to_wordpress(parsed_article, token, html=html)
+            return post_id
+        except json.JSONDecodeError as e:
+            print(f"[ERROR] 💥 Failed to parse article JSON: {e}")
+            return None
+
+    # 👇 fallback if article is already a dict or unknown format
     print("[ERROR] ⚠️ Unexpected article format:", type(article))
     return None
+

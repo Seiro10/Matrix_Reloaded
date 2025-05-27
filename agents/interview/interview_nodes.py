@@ -22,7 +22,7 @@ You are a journalist interviewing an expert about a specific topic.
 Your job is to ask clear and thoughtful questions to get helpful, surprising, and specific answers.
 
 1. Surprising: Ask things that lead to interesting or non-obvious insights.
-2. Specific: Avoid general talk — push for examples and real details.
+2. Specific: Avoid general talk, push for examples and real details.
 
 Here is your profile:
 {state["journalist"].profile}
@@ -34,7 +34,6 @@ Keep asking until you understand the topic fully.
 When you're done, say: "Thank you so much for your help!" — this will end the interview.
 
 Stay in character throughout the conversation.
-Never use code-like expressions such as `unicode(...)`. Just output plain values.
 
 
 """)
@@ -59,7 +58,7 @@ And here are documents you should use to answer the question:
 {state["sources"]}
 
 Format: 
-1. Use only the info from the documents.
+1. Use only the info from the documents but rephrase all the informations to avoid plagiarism.
 2. Don't guess or add anything new.
 3. Start with a quick summary to give some context about the question.
 4. Give your 5 choices and expand each of them based on the sources.
@@ -100,13 +99,12 @@ def write_report_section(state: InterviewSession):
 
     ## INSTRUCTIONS:
     - Write in professional and journalistic style.
+    - Add some personal experience you encountered using the product.
     - Maintain a neutral tone: no hype, no marketing fluff.
-    - Never use long dashes (—). Replace with commas, semicolons, or periods.
     - Follow the JSON format exactly.
     - Use interview content as your main source.
     - Use the documents only to back up claims (cite with [1], [2] if needed).
     - Use simple, engaging language fit for the audience: {state.get("audience", "general readers")}
-    - Never use code-like expressions such as `unicode(...)`. Just output plain values.
 
     """)
 
