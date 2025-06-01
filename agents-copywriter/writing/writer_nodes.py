@@ -1,15 +1,20 @@
 import json
 import re
 
+from dotenv import load_dotenv
+import os
+load_dotenv()
+
 from langchain_core.messages import SystemMessage, HumanMessage
 from langchain_openai import ChatOpenAI
+from langchain_anthropic import ChatAnthropic
 from langchain_core.runnables import RunnableConfig
 from langchain_core.output_parsers import JsonOutputParser
 
 
-llm = ChatOpenAI(model="gpt-4o-mini",temperature=1, top_p=0.9)
-
 def merge_sections_node(state):
+    llm = ChatOpenAI(model="gpt-4o-mini", temperature=1, top_p=0.9)
+
     system_msg = SystemMessage(content=f"""
     ## ROLE:
     You're a product journalist writing for a gaming blog in French. Your are an expert who’s tested dozens of products and has opinions.
@@ -57,41 +62,54 @@ def merge_sections_node(state):
 
 
 def optimize_article(article_json):
-    system = SystemMessage(content="""
+    llm = ChatAnthropic(
+        model="claude-sonnet-4-20250514",  # Replace with 20250514 if available
+        temperature=1,
+        top_p=0.9,
+        max_tokens=4000
+    )
+
+    system_prompt = """
     Tu es un journaliste francophone expert en réécriture et amélioration de contenu. 
     Ton but est de reprendre un article structuré en JSON et de :
-    
+
     - Réorganiser les paragraphes pour plus de fluidité narrative. 
-    - Tu as le droit de modifier la structure afin de modifier la position des (paragraphs1 a paragraphs4) 
+    - Tu as le droit de modifier la structure afin de modifier la position des (paragraphs1 à paragraphs4) 
     - Supprimer les redondances
     - Améliorer le style rédactionnel (ton naturel, fluide, conversationnel)
     - Corriger les fautes de grammaire ou formulations maladroites
     - Garder exactement la même structure JSON
-    - Soit honnête ; ne force pas l'amitié. Exemple : « Je ne pense pas que ce soit la meilleure idée ».
-    - Garde un ton naturel : Écrit comme vous parlez normalement. Vous pouvez commencer vos phrases par « et » ou “mais”. Exemple : « Et c'est pour cela que c'est important ».
-    
-    Réponds uniquement avec un JSON valide, sans texte libre autour.
-        """)
+    - Sois honnête ; ne force pas l'amitié. Exemple : « Je ne pense pas que ce soit la meilleure idée ».
+    - Garde un ton naturel : Écris comme tu parles normalement. Tu peux commencer tes phrases par « et » ou « mais ». Exemple : « Et c’est pour ça que c’est important ».
+    - Ne donne jamais de prix précis en euros. 
 
-    # Human prompt injects the article JSON and the specific request
-    human = HumanMessage(content=f"""
-    Voici l'article à optimiser, en JSON :
+    ⚠️ Réponds uniquement avec un JSON brut valide, sans texte autour.
+        """
+
+    user_prompt = f"""
+    Voici l'article à optimiser :
+
     {json.dumps(article_json, ensure_ascii=False, indent=2)}
-    """)
-    # Invoke the LLM with the system and human messages
-    response = llm.invoke([system, human])
+
+    Merci d'optimiser tous les champs textuels (teaser, paragraph1 à 4, pros, cons, etc) tout en respectant la structure JSON fournie.
+        """
+
+    response = llm.invoke([
+        {"role": "system", "content": system_prompt},
+        {"role": "user", "content": user_prompt}
+    ])
+
     raw = response.content.strip()
 
-    # 🧹 Optional cleanup: remove code fences and normalize characters
+    # 🧹 Nettoyage facultatif
     raw = re.sub(r"^```json|```$", "", raw, flags=re.MULTILINE).strip()
-    raw = raw.replace("–", ",")  # replace en dash with comma
+    raw = raw.replace("–", ",")
 
-    # Parse the cleaned JSON, fallback to original on error
     try:
         return json.loads(raw)
     except json.JSONDecodeError as e:
-        print(f"[ERROR] Failed to parse optimized JSON: {e}")
-        return article_json
+        print(f"[ERROR] ❌ Impossible de parser le JSON optimisé : {e}")
+        return article_json  # 🔁 Fallback sur la version non modifiée
 
 
 def optimize_article_node(state):

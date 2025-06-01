@@ -1,12 +1,12 @@
 from team.journalists_service import journalist_team_graph
 from interview.interview_service import interview_graph
 from writing.service import writer_graph
+from writing.writer_nodes import optimize_article
 from interview.interview import InterviewSession
 from langchain_core.messages import HumanMessage
 from utils.wordpress import get_jwt_token, post_article_to_wordpress
 from utils.wordpress import render_report_to_markdown, markdown_to_html
 from utils.prompts import load_prompt_template
-from writing.writer_nodes import optimize_article
 from uuid import uuid4
 import os
 import json
@@ -59,47 +59,59 @@ async def run_full_article_pipeline(row):
         "report_structure": report_structure
     }
 
-    # 💾 Save the merge_state for testing purposes
+    # 💾 Save intermediate state for debugging or replay
     with open("test_merge_input.json", "w", encoding="utf-8") as f:
         json.dump(merge_state, f, indent=2, ensure_ascii=False)
         print("[DEBUG] Saved merge state to test_merge_input.json")
 
+    # Step 4: Generate article using writer graph
     final_output = writer_graph.invoke(merge_state)
-
-    # Step 4: Authenticate with WordPress
-    USERNAME = os.getenv("USERNAME_WP")
-    PASSWORD = os.getenv("PASSWORD_WP")
-    token = get_jwt_token(USERNAME, PASSWORD)
-
-    # Step 5: Parse and publish
     article = final_output.get("article")
-
-    optimized_article = optimize_article(article)
-
-    if not optimized_article:
-        print(f"[ERROR] ❌ 'article' field is missing or empty in writer output: {final_output}")
+    print("Merging datas..")
+    if not article:
+        print(f"[ERROR] ❌ 'article' missing from writer output: {final_output}")
         return None
 
+    # Step 5: Optimize article
+    print("Starting optimization..")
+    optimized_article = optimize_article(article)
+    if not optimized_article:
+        print("[ERROR] ❌ Optimizer returned nothing.")
+        return None
+
+    # Step 6: Authenticate with WordPress
+    USERNAME = os.getenv("USERNAME_WP")
+    PASSWORD = os.getenv("PASSWORD_WP")
+    print(f"[DEBUG] USERNAME_WP={USERNAME}")
+    token = get_jwt_token(USERNAME, PASSWORD)
+
+    if not token:
+        print("[ERROR] ❌ Failed to retrieve WordPress token.")
+        return None
+
+    # Step 7: Parse and format final article
     if isinstance(optimized_article, str):
-        print(f"[DEBUG] Raw article string: {optimized_article[:200]}...")
-
-        # Clean up formatting markers (```json etc.)
+        print("[DEBUG] optimized_article is a string, attempting to parse JSON.")
+        print(f"[DEBUG] Raw article string preview:\n{optimized_article[:200]}...")
         clean_article = re.sub(r"^```json|```$", "", optimized_article.strip(), flags=re.MULTILINE).strip()
-
-        # Replace en dash with comma
         clean_article = clean_article.replace("–", ",")
 
         try:
             parsed_article = json.loads(clean_article)
-            markdown = render_report_to_markdown(parsed_article)
-            html = markdown_to_html(markdown)
-            post_id = post_article_to_wordpress(parsed_article, token, html=html)
-            return post_id
+            print("[DEBUG] ✅ Successfully parsed optimized article.")
         except json.JSONDecodeError as e:
-            print(f"[ERROR] 💥 Failed to parse article JSON: {e}")
+            print(f"[ERROR] Failed to parse optimized article: {e}")
             return None
+    else:
+        print("[DEBUG] optimized_article is already a dict.")
+        parsed_article = optimized_article
 
-    # 👇 fallback if article is already a dict or unknown format
-    print("[ERROR] ⚠️ Unexpected article format:", type(article))
-    return None
-
+    # Step 8: Convert to markdown and publish
+    try:
+        markdown = render_report_to_markdown(parsed_article)
+        html = markdown_to_html(markdown)
+        post_id = post_article_to_wordpress(parsed_article, token, html=html)
+        return post_id
+    except Exception as e:
+        print(f"[ERROR] 💥 Unexpected failure during render or publish: {e}")
+        return None

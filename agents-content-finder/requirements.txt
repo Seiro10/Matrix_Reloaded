@@ -1,0 +1,28 @@
+# FastAPI + Web
+fastapi
+uvicorn
+
+# LangGraph & LangChain
+langgraph
+langchain
+langchain-core
+langchain-community
+
+# Claude / Anthropic API
+anthropic
+
+# Google Ads API
+google-ads
+
+# HTTP Client
+httpx
+
+# Environment and utils
+python-dotenv
+
+# For async thread execution (used by LangGraph/Starlette)
+anyio
+
+playwright
+playwright-stealth
+beautifulsoup4

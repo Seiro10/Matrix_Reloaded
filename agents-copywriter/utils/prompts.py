@@ -2,7 +2,7 @@ import os
 import json
 
 PROMPT_TEMPLATE_MAP = {
-    "Review": "prompts/review_fr.json",
+    "News": "prompts/news_fr.json",
     "Guide": "prompts/guide_fr.json",
     "Comparison": "prompts/comparison_fr.json",
     "Ranking": "prompts/ranking_fr.json",
