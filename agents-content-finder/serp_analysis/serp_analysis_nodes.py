@@ -133,6 +133,9 @@ def is_html_response(response: dict) -> bool:
     return isinstance(response, dict) and "body" in response and "<html" in response["body"].lower()
 
 
+# Dans serp_analysis/serp_analysis_nodes.py
+# Modifie la fonction parse_html_serp
+
 def parse_html_serp(keyword: str, response: dict, competition: str = "UNKNOWN") -> dict:
     html = response.get("body", "")
     soup = BeautifulSoup(html, 'html.parser')
@@ -147,9 +150,12 @@ def parse_html_serp(keyword: str, response: dict, competition: str = "UNKNOWN") 
         "total_results_found": 0
     }
 
+    # Domaines exclus + Wikipedia et SensCritique
     excluded_domains = [
         'reddit.com', 'quora.com', 'youtube.com', 'stackoverflow.com',
-        'github.com', 'discord.com', 'forum', 'community', 'discussion'
+        'github.com', 'discord.com', 'forum', 'community', 'discussion',
+        'wikipedia.org', 'fr.wikipedia.org', 'en.wikipedia.org',  # Wikipedia
+        'senscritique.com', 'www.senscritique.com'  # SensCritique
     ]
 
     snippet_selectors = [
@@ -163,6 +169,10 @@ def parse_html_serp(keyword: str, response: dict, competition: str = "UNKNOWN") 
     position = 1
 
     for container in containers:
+        # Arrêter dès qu'on a 3 résultats
+        if len(organic_results) >= 3:
+            break
+
         try:
             title_elem = (container.find('h3') or
                           container.find(['div', 'span'], class_=re.compile(r'LC20lb|DKV0Md')) or
@@ -193,7 +203,7 @@ def parse_html_serp(keyword: str, response: dict, competition: str = "UNKNOWN") 
 
             url = url.strip().split('&')[0]
 
-            # Filtrage : domaines exclus
+            # Filtrage : domaines exclus (incluant Wikipedia et SensCritique)
             if any(domain in url.lower() for domain in excluded_domains):
                 continue
 
@@ -231,8 +241,6 @@ def parse_html_serp(keyword: str, response: dict, competition: str = "UNKNOWN") 
             })
 
             position += 1
-            if position > 20:
-                break
 
         except Exception as e:
             print(f"[DEBUG] Error parsing container: {e}")
@@ -310,6 +318,6 @@ def parse_html_serp(keyword: str, response: dict, competition: str = "UNKNOWN") 
             if href not in forum_links:
                 forum_links.append(href)
 
-    data["forum"] = forum_links[:5]
+    data["forum"] = forum_links[:3]
 
     return data

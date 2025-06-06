@@ -27,7 +27,7 @@ def fetch_keyword_data_from_dataforseo(terms: List[str], language_code="fr", loc
             "keyword": term,
             "language_code": language_code,
             "location_code": location_code,
-            "limit": 10,
+            "limit": 3,
             "sort_by": "keyword_data.search_volume"
         })
 
