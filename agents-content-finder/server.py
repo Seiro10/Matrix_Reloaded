@@ -1,21 +1,18 @@
 from dotenv import load_dotenv
-load_dotenv()
-from fastapi import FastAPI, HTTPException
+load_dotenv()  # Très important ici
+
 from fastapi import FastAPI
 from pydantic import BaseModel
 from typing import List
+
 from core.state import WorkflowState
 from core.graph import graph
-import json
-from pprint import pprint
-from utils.utils import save_results_to_json, send_to_claude_direct_api
-
+from utils.utils import save_results_to_json, clean_text_fields
 
 app = FastAPI()
 
 class SearchTerms(BaseModel):
     terms: List[str]
-
 
 @app.post("/content-finder")
 async def content_finder(search_terms: SearchTerms):
@@ -28,9 +25,8 @@ async def content_finder(search_terms: SearchTerms):
     )
     result = await graph.ainvoke(initial_state)
 
-    print("\n===== ENVOI À CLAUDE POUR NETTOYAGE =====\n")
-    cleaned = await send_to_claude_direct_api(result["keyword_data"])
+    print("\n===== ENVOI POUR NETTOYAGE =====\n")
+    cleaned = clean_text_fields(result["keyword_data"])
 
     save_results_to_json(cleaned)
-
     return cleaned

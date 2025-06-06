@@ -18,20 +18,34 @@ BRD_ZONE = os.getenv("BRIGHTDATA_ZONE_NAME")
 # === Node principal appelé par LangGraph ===
 async def fetch_serp_data_node(state: WorkflowState) -> WorkflowState:
     updated_keyword_data = state.get("keyword_data", {})
+    print("[DEBUG] keyword_data initial:", updated_keyword_data)
 
     for i, keyword in enumerate(state["deduplicated_keywords"]):
         try:
             print(f"[INFO] Processing keyword {i + 1}/{len(state['deduplicated_keywords'])}: '{keyword}'")
 
-            # 1. Structured API
             response = await query_brightdata_serp_structured(keyword)
 
             if is_structured_response(response):
                 print("[INFO] Got structured JSON response")
                 keyword_entry = extract_serp_info(keyword, response)
+
             elif is_html_response(response):
                 print("[INFO] Got HTML response, parsing...")
-                keyword_entry = parse_html_serp(keyword, response)
+
+                # Récupère les métadonnées depuis keyword_data
+                meta = updated_keyword_data.get(keyword, {})
+                competition = meta.get("competition", "UNKNOWN")
+                monthly_searches = meta.get("monthly_searches", 0)
+
+                print(f"[DEBUG] competition for '{keyword}' = {competition}")
+                print(f"[DEBUG] monthly searches for '{keyword}' = {monthly_searches}")
+
+                keyword_entry = parse_html_serp(keyword, response, competition)
+
+                # Injecte aussi le volume
+                keyword_entry["monthly_searches"] = monthly_searches
+
             else:
                 print(f"[EMPTY] No usable data for: {keyword}")
                 updated_keyword_data[keyword] = {"error": "No data returned"}
@@ -49,6 +63,7 @@ async def fetch_serp_data_node(state: WorkflowState) -> WorkflowState:
 
     state["keyword_data"] = updated_keyword_data
     return state
+
 
 
 # === BrightData Structured API
@@ -118,13 +133,13 @@ def is_html_response(response: dict) -> bool:
     return isinstance(response, dict) and "body" in response and "<html" in response["body"].lower()
 
 
-def parse_html_serp(keyword: str, response: dict) -> dict:
+def parse_html_serp(keyword: str, response: dict, competition: str = "UNKNOWN") -> dict:
     html = response.get("body", "")
     soup = BeautifulSoup(html, 'html.parser')
 
     data = {
         "keyword": keyword,
-        "competition": "UNKNOWN",
+        "competition": competition,
         "people_also_ask": [],
         "people_also_search_for": [],
         "forum": [],
