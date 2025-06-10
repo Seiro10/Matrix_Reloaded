@@ -1,0 +1,87 @@
+{
+  "title": "{{title}}",
+  "introduction": {
+    "paragraphs": [
+      "Intro paragraph explaining what the reader will learn and why the subject matters.",
+      "Explain how the selection was made and what criteria were used."
+    ],
+    "bullets": [
+      "Highlight the best high-end, mid-range, and budget product briefly, in 200 words"
+    ]
+  },
+  "comparisons": [
+    {
+      "title": "Best High-End",
+      "product": "Full product name (e.g., Logitech G Pro X Superlight 2)",
+      "description": "Write a short paragraph (~100 words) explaining why this is the best high-end product overall. Highlight its top-tier performance, premium build, advanced features, and who it’s best suited for (e.g., professional gamers, enthusiasts). Keep the tone objective and informative.",
+      "paragraph1": "Describe the product’s ergonomics and design in detail. Mention whether it’s lightweight or heavy, compact or large, the materials used, build quality, and overall aesthetics (e.g., minimalistic, flashy, modern). Include notes on the finish (e.g., matte, glossy, textured) and overall feel in hand.",
+      "paragraph2": "Explain which hand sizes (small, medium, large) and grip styles (palm, claw, fingertip) the product is best suited for. Use dimensions if available (length, width, height), and offer practical advice for choosing this product based on hand shape and usage habits.",
+      "paragraph3": "Detail the number of buttons, their placement, and overall usability. Mention whether it’s optimized for right- or left-handed users, whether the side buttons are easy to reach, and if the buttons are programmable. Include information about button quality and special features (e.g., sniper button, tilt wheel, infinite scroll).",
+      "paragraph4": "Analyze the price of the product. Explain whether the price is justified given the features and performance. Briefly compare it with one or two competing products. Mention if it's frequently discounted or tends to stay at full price. Conclude with a value judgment based on the intended user profile.",
+      "pros": [
+        "Clear, specific advantage (e.g., Extremely lightweight at just 63g)",
+        "Another strong selling point (e.g., Exceptional 95-hour battery life)"
+      ],
+      "cons": [
+        "Honest limitation or downside (e.g., Very expensive with few discounts)"
+      ]
+    },
+    {
+      "title": "Best Mid-Range",
+      "product": "Full product name",
+      "description": "Same instructions as above, adapted for mid-range products.",
+      "paragraph1": "Ergonomics and design details.",
+      "paragraph2": "Hand size and grip style compatibility.",
+      "paragraph3": "Buttons and usability.",
+      "paragraph4": "Price and value comparison.",
+      "pros": ["Pro 1", "Pro 2"],
+      "cons": ["Con 1"]
+    },
+    {
+      "title": "Best Budget",
+      "product": "Full product name",
+      "description": "Same instructions as above, adapted for budget products.",
+      "paragraph1": "Ergonomics and design details.",
+      "paragraph2": "Hand size and grip style compatibility.",
+      "paragraph3": "Buttons and usability.",
+      "paragraph4": "Price and value comparison.",
+      "pros": ["Pro 1", "Pro 2"],
+      "cons": ["Con 1"]
+    }
+  ],
+  "notable_mentions": [
+    {
+      "title": "Best for work and play usage",
+      "description": "Product that’s best suited for players using their mice for working. Include information about ergonomics, hand shape, grip style, weight, number of buttons, button placement, price, etc."
+    },
+    {
+      "title": "Special mention for pros",
+      "description": "Product for esports or special features. Include information about ergonomics, hand shape, grip style, weight, number of buttons, button placement, price, etc."
+    }
+  ],
+  "updates": [
+    "**Current Month** 2025: Note if a new model was added or prices have changed."
+  ],
+  "conclusion": {
+    "summary": "Wrap-up paragraph that restates the value of the article and who should buy what in 200 words.",
+    "recommendations": [
+      "Overall favorite: Product name",
+      "Best value for money: Product name"
+    ]
+  },
+  "faq_description": "This FAQ section aims to address common questions readers may have when choosing the right gaming mouse. It helps clarify essential considerations like performance, comfort, and connectivity to guide informed decisions.",
+  "faq": [
+    {
+      "question": "Question 1",
+      "answer": "Answer 1"
+    },
+    {
+      "question": "Question 2",
+      "answer": "Answer 2"
+    },
+    {
+      "question": "Question 3",
+      "answer": "Answer 3."
+    }
+  ]
+}

@@ -1,0 +1,97 @@
+{
+  "title": "Write the best SEO title showing the main keyword. Example: Les meilleures souris gamer en 2025",
+  "introduction": {
+    "teaser": "Write a teaser paragraph: set the context for your future response.",
+    "bullets": [
+      "Highlight the best high-end, mid-range, and budget product briefly, in 200 words."
+    ],
+    "hook2": [
+      "Convince the readers: you have more to share with them, that they'll learn more in the rest of the article."
+    ]
+  },
+  "comparisons": [
+    {
+      "title": "La meilleure souris haut de gamme",
+      "product": "Full product name (e.g., Logitech G Pro X Superlight 2)",
+      "description": "Write a short paragraph (~100 words) explaining why this is the best high-end product overall. Describe its top-tier performance, premium build, advanced features, and who it’s best suited for.",
+      "paragraph1": "Describe the product’s ergonomics and design in detail.",
+      "paragraph2": "Explain which hand sizes and grip styles the product is best suited for.",
+      "paragraph3": "Detail the number of buttons, their placement, and usability.",
+      "paragraph4": "Analyze the price and how it compares to alternatives.",
+      "note": "Write 3–4 paragraphs covering all points above, but not in a fixed order. Combine topics naturally where it makes sense.",
+      "pros": [
+        "Give 2 or 3 Clear, specific advantage (e.g., Extremely lightweight at just 63g)",
+        "Another strong selling point (e.g., Exceptional 95-hour battery life)"
+      ],
+      "cons": [
+        "Give X Honest limitation or downside (e.g., Very expensive with few discounts)"
+      ]
+    },
+    {
+      "title": "La souris gamer au meilleur rapport qualité/prix",
+      "product": "Full product name",
+      "description": "Same instructions as above, adapted for mid-range products.",
+      "paragraph1": "Describe the product’s ergonomics and design in detail.",
+      "paragraph2": "Explain which hand sizes and grip styles the product is best suited for.",
+      "paragraph3": "Detail the number of buttons, their placement, and usability.",
+      "paragraph4": "Analyze the price and how it compares to alternatives.",
+      "note": "Write 3–4 paragraphs covering all points above, but not in a fixed order. Combine topics naturally where it makes sense.",
+      "pros": [
+        "Pro 1",
+        "Pro 2"
+      ],
+      "cons": [
+        "Con 1"
+      ]
+    },
+    {
+      "title": "La meilleure souris gamer pas chère",
+      "product": "Full product name",
+      "description": "Same instructions as above, adapted for budget products.",
+      "paragraph1": "Describe the product’s ergonomics and design in detail.",
+      "paragraph2": "Explain which hand sizes and grip styles the product is best suited for.",
+      "paragraph3": "Detail the number of buttons, their placement, and usability.",
+      "paragraph4": "Analyze the price and how it compares to alternatives.",
+      "note": "Write 3–4 paragraphs covering all points above, but not in a fixed order. Combine topics naturally where it makes sense.",
+      "pros": [
+        "Pro 1",
+        "Pro 2"
+      ],
+      "cons": [
+        "Con 1"
+      ]
+    }
+  ],
+  "notable_mentions": [
+    {
+      "title": "La meilleure souris pour le travail et le gaming",
+      "description": "Product that’s best suited for players using their mice for working, in 150 words. Include information about ergonomics, hand shape, grip style, weight, number of buttons, button placement, price, etc."
+    },
+    {
+      "title": "La meilleure souris pour la compétition",
+      "description": "Product for esports or competitors in 150 words. Include information about ergonomics, hand shape, grip style, weight, number of buttons, button placement, price, etc."
+    }
+  ],
+  "conclusion": {
+    "summary": "Wrap-up paragraph that restates the value of the article and who should buy what in 300 words.",
+    "recommendations": [
+      "Overall favorite: Product name",
+      "Best value for money: Product name"
+    ]
+  },
+  "faq_description": "This FAQ section aims to address common questions readers may have when choosing the right gaming mouse.",
+  "faq": [
+    {
+      "question": "Question 1",
+      "answer": "Answer 1. 150 words"
+    },
+    {
+      "question": "Question 2",
+      "answer": "Answer 2. 150 words"
+    },
+    {
+      "question": "Question 3",
+      "answer": "Answer 3. 150 words"
+    }
+  ]
+}
