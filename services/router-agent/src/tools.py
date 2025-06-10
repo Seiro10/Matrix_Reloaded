@@ -50,32 +50,6 @@ def analyze_keyword_for_site_selection(keyword: str, similar_keywords: List[Dict
             "inspiration", "mental", "psychologie", "croissance personnelle",
             "success", "entrepreneur", "business", "formation", "développer",
             "améliorer", "changer sa vie", "positive attitude", "auto-discipline"
-        ],
-        "drones": [
-            # French drone terms
-            "drone", "drones", "quadricoptère", "quadcopter", "fpv", "vol", "pilotage",
-            "caméra drone", "photographie aérienne", "vidéo aérienne", "réglementation drone",
-            "dji", "parrot", "mavic", "phantom", "racing drone", "télépilotage",
-            "drone professionnel", "drone loisir", "prise de vue", "stabilisation",
-            "gimbal", "radiocommande", "batterie drone", "hélices"
-        ],
-        "robotics": [
-            # French robotics and AI terms
-            "robot", "robotique", "automatisation", "intelligence artificielle",
-            "ia", "ai", "machine learning", "deep learning", "automation", "industrie 4.0",
-            "iot", "internet des objets", "capteurs", "programmation robot", "arduino",
-            "raspberry pi", "cobots", "robotique industrielle", "domotique",
-            "chatbot", "assistant virtuel", "algorithme", "neural network",
-            "tensorflow", "python", "technologie", "innovation"
-        ],
-        "marketing": [
-            # French marketing terms
-            "marketing", "marketing digital", "seo", "référencement", "sem", "réseaux sociaux",
-            "publicité", "content marketing", "email marketing", "lead generation",
-            "conversion", "analytics", "google ads", "facebook ads", "instagram",
-            "influence marketing", "influenceur", "brand", "marque", "stratégie marketing",
-            "e-commerce", "vente en ligne", "boutique", "trafic", "audience",
-            "engagement", "roi", "kpi", "growth hacking", "acquisition"
         ]
     }
 
@@ -315,21 +289,6 @@ def generate_internal_links(keyword: str, site_id: int, niche: str) -> List[str]
                 "Développement personnel - Guides pour améliorer sa vie",
                 "Techniques de motivation - Méthodes éprouvées pour rester motivé",
                 "Success stories - Histoires inspirantes de réussite"
-            ],
-            "drones": [
-                "Réglementation drones - Tout savoir sur la législation",
-                "Tests de drones - Comparatifs et reviews détaillés",
-                "Tutoriels pilotage - Apprendre à piloter un drone"
-            ],
-            "robotics": [
-                "Actualités robotique - Les dernières innovations",
-                "Guides techniques - Tutoriels de programmation",
-                "Innovations IA - Intelligence artificielle et machine learning"
-            ],
-            "marketing": [
-                "Stratégies marketing - Techniques pour développer son business",
-                "Outils marketing - Les meilleurs outils pour marketeurs",
-                "Tendances digitales - L'actualité du marketing digital"
             ]
         }
 

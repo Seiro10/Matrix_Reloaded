@@ -10,3 +10,7 @@ pyvenv.cfg
 .venv
 lib
 lib64/
+content-finder/
+agents-copywriter/
+get-competitors/
+content-router-agent/

@@ -2,6 +2,7 @@ import sys
 import os
 from typing import Dict, Any
 
+
 from tools import (
     analyze_keyword_for_site_selection,
     fetch_sitemap_content,
@@ -29,17 +30,10 @@ logger = logging.getLogger(__name__)
 def site_selection_node(state: RouterState) -> RouterState:
     """
     Select the most appropriate website based on keyword analysis
-
-    Args:
-        state: Current router state
-
-    Returns:
-        Updated state with selected site information
     """
-
     input_data = state["input_data"]
-    keyword = input_data.keyword
-    similar_keywords = [kw.dict() for kw in input_data.similar_keywords]
+    keyword = input_data.get_primary_keyword()  # FIXED: Use method instead of property
+    similar_keywords = [kw.dict() for kw in input_data.get_similar_keywords()]  # FIXED: Use method
 
     logger.info(f"🔍 Analyzing keyword for site selection: '{keyword}'")
 
@@ -99,16 +93,9 @@ def site_selection_node(state: RouterState) -> RouterState:
 def content_analysis_node(state: RouterState) -> RouterState:
     """
     Analyze existing content on the selected site
-
-    Args:
-        state: Current router state with selected site
-
-    Returns:
-        Updated state with content analysis results
     """
-
     selected_site = state["selected_site"]
-    keyword = state["input_data"].keyword
+    keyword = state["input_data"].get_primary_keyword()  # FIXED: Use method
 
     logger.info(f"🔎 Checking existing content for keyword: '{keyword}'")
     logger.info(f"🌐 Analyzing site: {selected_site['name']} ({selected_site['domain']})")
@@ -162,16 +149,9 @@ def content_analysis_node(state: RouterState) -> RouterState:
 def routing_decision_node(state: RouterState) -> RouterState:
     """
     Make the final routing decision and prepare output payload
-
-    Args:
-        state: Current router state with all analysis completed
-
-    Returns:
-        Final state with routing decision and output payload
     """
-
     input_data = state["input_data"]
-    keyword = input_data.keyword
+    keyword = input_data.get_primary_keyword()
     selected_site = state["selected_site"]
     existing_content = state["existing_content"]
 
@@ -193,20 +173,29 @@ def routing_decision_node(state: RouterState) -> RouterState:
 
             logger.info(f"📝 Decision: REWRITER - Content exists, will update")
 
-            # Prepare payload for Rewriter Agent
+            # PRINT OUTPUT INSTEAD OF CALLING REWRITER
+            print("🔄 CALLING REWRITER AGENT")
+            print(f"Keyword: {keyword}")
+            print(f"Site: {selected_site['name']}")
+            print(f"Existing content: {existing_content.get('content', {}).get('title', 'Found content')}")
+            serp_data = input_data.get_serp_analysis()
+            print(f"SERP data: {len(serp_data.top_results)} top results")
+            print("=" * 50)
+
+            # Create proper payload structure
             output_payload = {
                 "agent_target": "rewriter",
                 "keyword": keyword,
                 "site_config": SiteInfo(**selected_site),
-                "existing_content": existing_content["content"],
-                "serp_analysis": input_data.serp_analysis,
-                "similar_keywords": input_data.similar_keywords,
-                "internal_linking_suggestions": state["internal_linking_suggestions"],
+                "serp_analysis": input_data.get_serp_analysis(),
+                "similar_keywords": input_data.get_similar_keywords(),
+                "internal_linking_suggestions": state["internal_linking_suggestions"] or [],
                 "routing_metadata": RoutingMetadata(
                     confidence_score=state["confidence_score"],
                     content_source=existing_content["source"],
                     timestamp=datetime.now().isoformat()
-                )
+                ),
+                "existing_content": existing_content["content"]
             }
 
         else:
@@ -219,14 +208,24 @@ def routing_decision_node(state: RouterState) -> RouterState:
 
             logger.info(f"✍️ Decision: COPYWRITER - Creating new content")
 
-            # Prepare payload for Copywriter Agent
+            # PRINT OUTPUT INSTEAD OF CALLING COPYWRITER
+            print("✍️ CALLING COPYWRITER AGENT")
+            print(f"Keyword: {keyword}")
+            print(f"Site: {selected_site['name']}")
+            similar_keywords = input_data.get_similar_keywords()
+            print(f"Similar keywords: {[k.keyword for k in similar_keywords]}")
+            serp_data = input_data.get_serp_analysis()
+            print(f"SERP data: {len(serp_data.top_results)} top results")
+            print("=" * 50)
+
+            # Create proper payload structure
             output_payload = {
                 "agent_target": "copywriter",
                 "keyword": keyword,
                 "site_config": SiteInfo(**selected_site),
-                "serp_analysis": input_data.serp_analysis,
-                "similar_keywords": input_data.similar_keywords,
-                "internal_linking_suggestions": state["internal_linking_suggestions"],
+                "serp_analysis": input_data.get_serp_analysis(),
+                "similar_keywords": input_data.get_similar_keywords(),
+                "internal_linking_suggestions": state["internal_linking_suggestions"] or [],
                 "routing_metadata": RoutingMetadata(
                     confidence_score=state["confidence_score"],
                     timestamp=datetime.now().isoformat()
@@ -245,7 +244,6 @@ def routing_decision_node(state: RouterState) -> RouterState:
 
     except Exception as e:
         logger.error(f"❌ Error in routing decision: {e}")
-        # Return error state
         return {
             **state,
             "routing_decision": None,
@@ -297,7 +295,7 @@ async def process_content_finder_output(content_data: ContentFinderOutput) -> Di
         Dict containing routing decision and payload for next agent
     """
 
-    logger.info(f"🎬 Starting content routing process for keyword: '{content_data.keyword}'")
+    logger.info(f"🎬 Starting content routing process for keyword: '{content_data.get_primary_keyword()}'")  # FIXED
 
     try:
         # Create router agent instance

@@ -17,17 +17,16 @@ class WebsiteConfig:
     wordpress_api_url: str
 
 
-# Your 5 WordPress sites configuration
 WEBSITES = [
     WebsiteConfig(
         site_id=1,
-        name="Gaming Hub",
-        domain="gaminghub.fr",
+        name="Stuffgaming",
+        domain="stuffgaming.fr",
         niche="gaming",
         theme="Gaming hardware, reviews, guides",
         language="FR",
-        sitemap_url="https://gaminghub.fr/sitemap.xml",
-        wordpress_api_url="https://gaminghub.fr/wp-json/wp/v2/"
+        sitemap_url="https://stuffgaming.fr/sitemap.xml",  # Placeholder for testing
+        wordpress_api_url="http://stuffgaming.fr/wp-json/wp/v2/"  # Placeholder for testing
     ),
     WebsiteConfig(
         site_id=2,
@@ -36,19 +35,19 @@ WEBSITES = [
         niche="motivation",
         theme="Personal development, productivity, mindset",
         language="FR",
-        sitemap_url="https://motivationplus.fr/sitemap.xml",
-        wordpress_api_url="https://motivationplus.fr/wp-json/wp/v2/"
+        sitemap_url="http://example.com/sitemap.xml",  # Placeholder for testing
+        wordpress_api_url="http://example.com/wp-json/wp/v2/"  # Placeholder for testing
     )
 ]
 
 
-# Environment Configuration
 class Settings:
     def __init__(self):
         self.openai_api_key = os.getenv("OPENAI_API_KEY")
         self.project_id = os.getenv("PROJECT_ID")
         self.environment = os.getenv("ENVIRONMENT", "development")
-        self.db_path = os.getenv("DB_PATH", "/app/data/content_db.sqlite")
+        # Fix the database path
+        self.db_path = os.getenv("DB_PATH", "./data/content_db.sqlite")  # Changed from /app/data/
         self.port = int(os.getenv("PORT", 8080))
 
         # Validation

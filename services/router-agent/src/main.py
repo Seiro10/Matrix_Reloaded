@@ -62,7 +62,7 @@ async def route_content(content_data: ContentFinderOutput):
     """
 
     try:
-        logger.info(f"Processing routing request for keyword: {content_data.keyword}")
+        logger.info(f"Processing routing request for keyword: {content_data.get_primary_keyword()}")  # FIXED
 
         # Process through router agent
         result = await process_content_finder_output(content_data)
