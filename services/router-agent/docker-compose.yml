@@ -1,0 +1,29 @@
+version: '3.8'
+
+services:
+  router-agent:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    ports:
+      - "8080:8080"
+    environment:
+      - ENVIRONMENT=production
+      - PORT=8080
+      - DB_PATH=/app/data/content_db.sqlite
+      # Add your API keys here or use .env file
+      - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY}
+      - OPENAI_API_KEY=${OPENAI_API_KEY}
+    volumes:
+      # Persist database and output files
+      - ./data:/app/data
+      - ./output:/app/output
+      # Optional: mount logs
+      - ./logs:/app/logs
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8080/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
