@@ -1,59 +1,193 @@
 import sys
 import os
 from typing import Dict, Any
-
-
-from tools import (
-    analyze_keyword_for_site_selection,
-    fetch_sitemap_content,
-    check_existing_content,
-    generate_internal_links
-)
-from config import WEBSITES
 from datetime import datetime
 from langgraph.checkpoint.memory import InMemorySaver
 
 # Add src directory to Python path
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
-# Change relative imports to absolute imports
+from tools import (
+    fetch_sitemap_content,
+    analyze_existing_content,
+    generate_internal_links,
+    make_intelligent_routing_decision
+)
+from config import WEBSITES
 from models import RouterState, ContentFinderOutput, SiteInfo, RoutingMetadata, OutputPayload
-from config import settings
-
 from langgraph.graph import StateGraph, START, END
-from langgraph.prebuilt import ToolNode
 import logging
 
 logger = logging.getLogger(__name__)
 
 
-def site_selection_node(state: RouterState) -> RouterState:
+def intelligent_routing_node(state: RouterState) -> RouterState:
     """
-    Select the most appropriate website based on keyword analysis
+    Single node that makes both site selection and routing decisions using LLM
     """
     input_data = state["input_data"]
-    keyword = input_data.get_primary_keyword()  # FIXED: Use method instead of property
-    similar_keywords = [kw.dict() for kw in input_data.get_similar_keywords()]  # FIXED: Use method
+    keyword = input_data.get_primary_keyword()
+    similar_keywords = [kw.dict() for kw in input_data.get_similar_keywords()]
 
-    logger.info(f"🔍 Analyzing keyword for site selection: '{keyword}'")
+    logger.info(f"Starting  routing for keyword: '{keyword}'")
 
     try:
-        # Analyze keyword to determine best niche
-        niche_analysis = analyze_keyword_for_site_selection.invoke({
+        # Step 1: Quick existing content analysis (no LLM needed)
+        logger.info(f"📋 Gathering context...")
+
+        # We'll analyze all sites quickly to give LLM full context
+        content_analysis = {}
+        sitemap_data = {}
+
+        for website in WEBSITES:
+            # Fetch sitemap
+            sitemap_urls = fetch_sitemap_content.invoke(website.sitemap_url)
+            sitemap_data[website.niche] = sitemap_urls
+
+            # Analyze existing content
+            content_result = analyze_existing_content.invoke({
+                "keyword": keyword,
+                "site_id": website.site_id,
+                "sitemap_urls": sitemap_urls
+            })
+            content_analysis[website.niche] = content_result
+
+        # Step 2: Prepare SERP context
+        serp_data = input_data.get_serp_analysis()
+        serp_context = [
+            {
+                "title": result.title,
+                "url": result.url,
+                "snippet": result.meta_description
+            }
+            for result in serp_data.top_results[:3]
+        ]
+
+        # Step 3: Single intelligent LLM decision
+        logger.info(f"Making routing decision...")
+
+        # Combine content analysis for LLM context
+        combined_content_summary = {
+            "gaming_content": content_analysis.get("gaming", {}),
+            "motivation_content": content_analysis.get("motivation", {}),
+            "summary": f"Gaming: {content_analysis.get('gaming', {}).get('summary', 'No content')} | " +
+                       f"Motivation: {content_analysis.get('motivation', {}).get('summary', 'No content')}"
+        }
+
+        intelligent_decision = make_intelligent_routing_decision.invoke({
             "keyword": keyword,
-            "similar_keywords": similar_keywords
+            "similar_keywords": similar_keywords,
+            "existing_content_summary": combined_content_summary,
+            "serp_context": serp_context
         })
 
-        # Find the matching website
-        recommended_niche = niche_analysis["recommended_niche"]
+        # Step 4: Map decision to actual website
+        selected_niche = intelligent_decision["selected_site_niche"]
         selected_site = next(
-            (site for site in WEBSITES if site.niche == recommended_niche),
-            WEBSITES[0]  # Default to first site if no match
+            (site for site in WEBSITES if site.niche == selected_niche),
+            WEBSITES[0]  # Fallback
         )
 
-        logger.info(f"✅ Selected site: {selected_site.name} (niche: {selected_site.niche})")
-        logger.info(f"📊 Selection confidence: {niche_analysis['confidence']:.2%}")
-        logger.info(f"🏷️ Matched indicators: {niche_analysis['analysis_details']['matched_indicators']}")
+        # Step 5: Generate internal links for selected site
+        internal_links = generate_internal_links.invoke({
+            "keyword": keyword,
+            "site_id": selected_site.site_id,
+            "niche": selected_site.niche
+        })
+
+        # Step 6: Prepare final output
+        routing_decision = intelligent_decision["routing_decision"]
+        confidence = intelligent_decision["confidence"]
+        reasoning = intelligent_decision["combined_reasoning"]
+
+        logger.info(f"Routing complete:")
+        logger.info(f"   Site: {selected_site.name} ({selected_niche})")
+        logger.info(f"   Decision: {routing_decision.upper()}")
+        logger.info(f"   Confidence: {confidence:.1%}")
+
+        # Import CSV utilities
+        from csv_utils import (
+            create_copywriter_csv,
+            create_rewriter_csv,
+            extract_existing_content_url,
+            get_keyword_data_from_content_finder
+        )
+
+        # Get keyword data for CSV generation
+        keyword_data = get_keyword_data_from_content_finder(input_data, keyword)
+
+        # Generate CSV and print decision output
+        if routing_decision == "rewriter":
+            # Extract URL for existing content
+            existing_url = extract_existing_content_url(content_analysis[selected_niche])
+
+            # Create rewriter CSV
+            csv_file = create_rewriter_csv(
+                existing_content_url=existing_url,
+                keyword=keyword,
+                keyword_data=keyword_data,
+                site_info={
+                    "name": selected_site.name,
+                    "domain": selected_site.domain,
+                    "niche": selected_site.niche
+                },
+                confidence=confidence
+            )
+
+            print(f"\n🔄 CALLING REWRITER AGENT")
+            print(f"Keyword: {keyword}")
+            print(f"Site: {selected_site.name}")
+            print(f"Confidence: {confidence:.1%}")
+            print(f"URL to rewrite: {existing_url}")
+            print(f"📊 CSV created: {csv_file}")
+            print("=" * 50)
+        else:
+            # Create copywriter CSV
+            csv_file = create_copywriter_csv(
+                keyword=keyword,
+                keyword_data=keyword_data,
+                site_info={
+                    "name": selected_site.name,
+                    "domain": selected_site.domain,
+                    "niche": selected_site.niche
+                },
+                confidence=confidence
+            )
+
+            print(f"\n✍️ CALLING COPYWRITER AGENT")
+            print(f"Keyword: {keyword}")
+            print(f"Site: {selected_site.name}")
+            print(f"Confidence: {confidence:.1%}")
+            print(f"Similar keywords: {[k['keyword'] for k in similar_keywords[:3]]}")
+            print(f"📊 CSV created: {csv_file}")
+            print("=" * 50)
+
+        # Create output payload
+        output_payload = {
+            "agent_target": routing_decision,
+            "keyword": keyword,
+            "site_config": SiteInfo(
+                site_id=selected_site.site_id,
+                name=selected_site.name,
+                domain=selected_site.domain,
+                niche=selected_site.niche,
+                theme=selected_site.theme,
+                language=selected_site.language,
+                sitemap_url=selected_site.sitemap_url,
+                wordpress_api_url=selected_site.wordpress_api_url
+            ),
+            "serp_analysis": input_data.get_serp_analysis(),
+            "similar_keywords": input_data.get_similar_keywords(),
+            "internal_linking_suggestions": internal_links,
+            "routing_metadata": RoutingMetadata(
+                confidence_score=confidence,
+                content_source=content_analysis[selected_niche].get('source'),
+                timestamp=datetime.now().isoformat()
+            ),
+            "existing_content": content_analysis[selected_niche].get('content'),
+            "llm_reasoning": reasoning,
+            "csv_file": csv_file  # Add CSV file path to payload
+        }
 
         return {
             **state,
@@ -67,12 +201,18 @@ def site_selection_node(state: RouterState) -> RouterState:
                 "sitemap_url": selected_site.sitemap_url,
                 "wordpress_api_url": selected_site.wordpress_api_url
             },
-            "confidence_score": niche_analysis["confidence"]
+            "routing_decision": routing_decision,
+            "confidence_score": confidence,
+            "reasoning": reasoning,
+            "output_payload": output_payload,
+            "internal_linking_suggestions": internal_links,
+            "existing_content": content_analysis[selected_niche],
+            "csv_file": csv_file  # Add CSV file path to state
         }
 
     except Exception as e:
-        logger.error(f"❌ Error in site selection: {e}")
-        # Fallback to first site
+        logger.error(f" Error in routing: {e}")
+        # Fallback to first site and copywriter
         default_site = WEBSITES[0]
         return {
             **state,
@@ -86,228 +226,54 @@ def site_selection_node(state: RouterState) -> RouterState:
                 "sitemap_url": default_site.sitemap_url,
                 "wordpress_api_url": default_site.wordpress_api_url
             },
-            "confidence_score": 0.3
+            "routing_decision": "copywriter",
+            "confidence_score": 0.3,
+            "reasoning": f"Fallback due to error: {str(e)}",
+            "output_payload": None,
+            "internal_linking_suggestions": [],
+            "existing_content": None,
+            "csv_file": None
         }
 
 
-def content_analysis_node(state: RouterState) -> RouterState:
+def create_streamlined_router_agent():
     """
-    Analyze existing content on the selected site
+    Create streamlined Content Router Agent with single decision node
     """
-    selected_site = state["selected_site"]
-    keyword = state["input_data"].get_primary_keyword()  # FIXED: Use method
+    logger.info("🚀 Creating Streamlined Content Router Agent")
 
-    logger.info(f"🔎 Checking existing content for keyword: '{keyword}'")
-    logger.info(f"🌐 Analyzing site: {selected_site['name']} ({selected_site['domain']})")
-
-    try:
-        # Fetch sitemap URLs
-        logger.info(f"📄 Fetching sitemap from: {selected_site['sitemap_url']}")
-        sitemap_urls = fetch_sitemap_content.invoke(selected_site["sitemap_url"])
-        logger.info(f"📋 Retrieved {len(sitemap_urls)} URLs from sitemap")
-
-        # Check for existing content
-        content_check = check_existing_content.invoke({
-            "keyword": keyword,
-            "site_config": selected_site,
-            "sitemap_urls": sitemap_urls
-        })
-
-        # Generate internal linking suggestions
-        logger.info(f"🔗 Generating internal linking suggestions")
-        internal_links = generate_internal_links.invoke({
-            "keyword": keyword,
-            "site_id": selected_site["site_id"],
-            "niche": selected_site["niche"]
-        })
-
-        logger.info(f"📝 Content analysis result: {content_check['reason']}")
-        logger.info(f"🔗 Generated {len(internal_links)} internal linking suggestions")
-
-        return {
-            **state,
-            "existing_content": content_check,
-            "internal_linking_suggestions": internal_links
-        }
-
-    except Exception as e:
-        logger.error(f"❌ Error in content analysis: {e}")
-        # Return safe defaults
-        return {
-            **state,
-            "existing_content": {
-                "content_found": False,
-                "source": None,
-                "content": None,
-                "confidence": 0.0,
-                "reason": f"Error during analysis: {str(e)}"
-            },
-            "internal_linking_suggestions": []
-        }
-
-
-def routing_decision_node(state: RouterState) -> RouterState:
-    """
-    Make the final routing decision and prepare output payload
-    """
-    input_data = state["input_data"]
-    keyword = input_data.get_primary_keyword()
-    selected_site = state["selected_site"]
-    existing_content = state["existing_content"]
-
-    logger.info(f"🎯 Making routing decision for keyword: '{keyword}'")
-
-    try:
-        # Determine routing decision based on content analysis
-        confidence_threshold = 0.6
-
-        if (existing_content["content_found"] and
-                existing_content["confidence"] > confidence_threshold):
-
-            decision = "rewriter"
-            reasoning = (
-                f"Similar content found with {existing_content['confidence']:.1%} confidence. "
-                f"{existing_content['reason']} "
-                f"Routing to Rewriter Agent for content update."
-            )
-
-            logger.info(f"📝 Decision: REWRITER - Content exists, will update")
-
-            # PRINT OUTPUT INSTEAD OF CALLING REWRITER
-            print("🔄 CALLING REWRITER AGENT")
-            print(f"Keyword: {keyword}")
-            print(f"Site: {selected_site['name']}")
-            print(f"Existing content: {existing_content.get('content', {}).get('title', 'Found content')}")
-            serp_data = input_data.get_serp_analysis()
-            print(f"SERP data: {len(serp_data.top_results)} top results")
-            print("=" * 50)
-
-            # Create proper payload structure
-            output_payload = {
-                "agent_target": "rewriter",
-                "keyword": keyword,
-                "site_config": SiteInfo(**selected_site),
-                "serp_analysis": input_data.get_serp_analysis(),
-                "similar_keywords": input_data.get_similar_keywords(),
-                "internal_linking_suggestions": state["internal_linking_suggestions"] or [],
-                "routing_metadata": RoutingMetadata(
-                    confidence_score=state["confidence_score"],
-                    content_source=existing_content["source"],
-                    timestamp=datetime.now().isoformat()
-                ),
-                "existing_content": existing_content["content"]
-            }
-
-        else:
-            decision = "copywriter"
-            reasoning = (
-                f"No similar content found or low confidence ({existing_content['confidence']:.1%}). "
-                f"{existing_content['reason']} "
-                f"Routing to Copywriter Agent for new content creation."
-            )
-
-            logger.info(f"✍️ Decision: COPYWRITER - Creating new content")
-
-            # PRINT OUTPUT INSTEAD OF CALLING COPYWRITER
-            print("✍️ CALLING COPYWRITER AGENT")
-            print(f"Keyword: {keyword}")
-            print(f"Site: {selected_site['name']}")
-            similar_keywords = input_data.get_similar_keywords()
-            print(f"Similar keywords: {[k.keyword for k in similar_keywords]}")
-            serp_data = input_data.get_serp_analysis()
-            print(f"SERP data: {len(serp_data.top_results)} top results")
-            print("=" * 50)
-
-            # Create proper payload structure
-            output_payload = {
-                "agent_target": "copywriter",
-                "keyword": keyword,
-                "site_config": SiteInfo(**selected_site),
-                "serp_analysis": input_data.get_serp_analysis(),
-                "similar_keywords": input_data.get_similar_keywords(),
-                "internal_linking_suggestions": state["internal_linking_suggestions"] or [],
-                "routing_metadata": RoutingMetadata(
-                    confidence_score=state["confidence_score"],
-                    timestamp=datetime.now().isoformat()
-                )
-            }
-
-        logger.info(f"✅ Routing decision completed")
-        logger.info(f"📋 Reasoning: {reasoning}")
-
-        return {
-            **state,
-            "routing_decision": decision,
-            "reasoning": reasoning,
-            "output_payload": output_payload
-        }
-
-    except Exception as e:
-        logger.error(f"❌ Error in routing decision: {e}")
-        return {
-            **state,
-            "routing_decision": None,
-            "reasoning": f"Error making routing decision: {str(e)}",
-            "output_payload": None
-        }
-
-
-def create_content_router_agent():
-    """
-    Create the Content Router Agent using LangGraph
-
-    Returns:
-        Compiled LangGraph workflow for content routing
-    """
-
-    logger.info("🚀 Creating Content Router Agent")
-
-    # Create the state graph
+    # Create simple state graph with just one node
     workflow = StateGraph(RouterState)
 
-    # Add nodes with descriptive names
-    workflow.add_node("site_selection", site_selection_node)
-    workflow.add_node("content_analysis", content_analysis_node)
-    workflow.add_node("make_routing_decision", routing_decision_node)
+    # Single intelligent routing node
+    workflow.add_node("intelligent_routing", intelligent_routing_node)
 
-    # Define the execution flow
-    workflow.add_edge(START, "site_selection")
-    workflow.add_edge("site_selection", "content_analysis")
-    workflow.add_edge("content_analysis", "make_routing_decision")
-    workflow.add_edge("make_routing_decision", END)
+    # Simple flow: start → decide → end
+    workflow.add_edge(START, "intelligent_routing")
+    workflow.add_edge("intelligent_routing", END)
 
-    # Compile with checkpointer for persistence
+    # Compile with checkpointer
     checkpointer = InMemorySaver()
     compiled_workflow = workflow.compile(checkpointer=checkpointer)
 
-    logger.info("✅ Content Router Agent created successfully")
+    logger.info("Streamlined Content Router Agent created")
     return compiled_workflow
 
 
 async def process_content_finder_output(content_data: ContentFinderOutput) -> Dict[str, Any]:
     """
-    Process output from Content Finder Agent and route to appropriate agent
-
-    Args:
-        content_data: Parsed output from Content Finder Agent
-
-    Returns:
-        Dict containing routing decision and payload for next agent
+    Process content finder output with streamlined intelligent routing
     """
-
-    logger.info(f"🎬 Starting content routing process for keyword: '{content_data.get_primary_keyword()}'")  # FIXED
+    keyword = content_data.get_primary_keyword()
+    logger.info(f"Starting streamlined routing for keyword: '{keyword}'")
 
     try:
-        # Create router agent instance
-        router_agent = create_content_router_agent()
+        # Create streamlined router agent
+        router_agent = create_streamlined_router_agent()
 
-        # Generate unique session ID
-        session_id = f"router_{datetime.now().strftime('%Y%m%d_%H%M%S')}"
-        config = {
-            "configurable": {
-                "thread_id": session_id
-            }
-        }
+        # Generate session ID
+        session_id = f"streamlined_{datetime.now().strftime('%Y%m%d_%H%M%S')}"
+        config = {"configurable": {"thread_id": session_id}}
 
         # Prepare initial state
         initial_state = {
@@ -321,16 +287,14 @@ async def process_content_finder_output(content_data: ContentFinderOutput) -> Di
             "output_payload": None
         }
 
-        logger.info(f"🔄 Executing router workflow (session: {session_id})")
+        logger.info(f"🔄 Executing streamlined workflow (session: {session_id})")
 
-        # Execute the router workflow
+        # Execute workflow
         result = router_agent.invoke(initial_state, config=config)
 
-        # Check if workflow completed successfully
+        # Check results
         if result["routing_decision"] and result["output_payload"]:
-            logger.info(f"✅ Routing completed successfully")
-            logger.info(f"🎯 Decision: {result['routing_decision'].upper()}")
-            logger.info(f"🌐 Selected site: {result['selected_site']['name']}")
+            logger.info(f"✅ Streamlined routing successful: {result['routing_decision'].upper()}")
 
             return {
                 "success": True,
@@ -339,19 +303,22 @@ async def process_content_finder_output(content_data: ContentFinderOutput) -> Di
                 "confidence_score": result["confidence_score"],
                 "reasoning": result["reasoning"],
                 "payload": OutputPayload(**result["output_payload"]),
-                "internal_linking_suggestions": result["internal_linking_suggestions"]
+                "internal_linking_suggestions": result["internal_linking_suggestions"],
+                "csv_file": result.get("csv_file"),  # Include CSV file path
+                "is_llm_powered": True,
+                "is_streamlined": True
             }
         else:
-            logger.error("❌ Workflow completed but missing required outputs")
+            logger.error("❌ Workflow completed but missing outputs")
             return {
                 "success": False,
-                "error": "Workflow completed but routing decision or payload is missing",
+                "error": "Streamlined workflow failed - missing routing decision",
                 "routing_decision": None,
                 "payload": None
             }
 
     except Exception as e:
-        logger.error(f"❌ Error processing content finder output: {e}")
+        logger.error(f"❌ Error in streamlined routing: {e}")
         return {
             "success": False,
             "error": str(e),
