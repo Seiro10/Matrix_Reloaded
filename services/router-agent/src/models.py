@@ -23,7 +23,6 @@ class SERPAnalysis(BaseModel):
     people_also_ask: List[str]
 
 
-
 # Output Models
 class SiteInfo(BaseModel):
     site_id: int
@@ -49,6 +48,10 @@ class OutputPayload(BaseModel):
     internal_linking_suggestions: List[str]
     routing_metadata: RoutingMetadata
     existing_content: Optional[Dict[str, Any]] = None
+    # NEW: Add LLM reasoning field
+    llm_reasoning: Optional[str] = None
+    # NEW: Add CSV file path
+    csv_file: Optional[str] = None
 
 class RouterResponse(BaseModel):
     success: bool
@@ -59,6 +62,11 @@ class RouterResponse(BaseModel):
     payload: Optional[OutputPayload] = None
     internal_linking_suggestions: Optional[List[str]] = None
     error: Optional[str] = None
+    # NEW: Add LLM-specific fields
+    llm_reasoning: Optional[str] = None
+    is_llm_powered: Optional[bool] = False
+    # NEW: Add CSV file path
+    csv_file: Optional[str] = None
 
 # Database Models
 class ArticleRecord(BaseModel):
@@ -165,7 +173,6 @@ class ContentFinderOutput(BaseModel):
             return []
 
 
-
 # Internal State Models
 class RouterState(TypedDict):
     input_data: ContentFinderOutput
@@ -176,3 +183,9 @@ class RouterState(TypedDict):
     internal_linking_suggestions: Optional[List[str]]
     reasoning: Optional[str]
     output_payload: Optional[Dict[str, Any]]
+    # NEW: Add LLM-specific state fields
+    llm_reasoning: Optional[str]
+    llm_confidence: Optional[float]
+    serp_context: Optional[List[Dict[str, Any]]]
+    # NEW: Add CSV file path
+    csv_file: Optional[str]
