@@ -1,5 +1,75 @@
+# Python
 __pycache__/
-*.pyc
-.env
-.git
+*.py[cod]
+*$py.class
+*.so
+.Python
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+
+# Virtual environments
+content-finder/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Git
+.git/
+.gitignore
+
+# Environment files
+.env.example
+.env.local
+.env.development
+
+# Test files
+tests/
+test_*.py
+*_test.py
+
+# Documentation
+README.md
+docs/
+
+# Logs
+logs/
+*.log
+
+# Database files (we'll mount these as volumes)
+data/
+*.sqlite
+*.db
+
+# Output files (we'll mount these as volumes)
+output/
+*.csv
+*.json
+
+# Docker
+Dockerfile
+docker-compose*.yml
+.dockerignore
+
+# Specific to your project
 .serp_data.csv
+test_token.py
