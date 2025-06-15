@@ -1,0 +1,154 @@
+version: '3.8'
+
+services:
+  # Content Finder Agent (first in the chain)
+  content-finder:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    ports:
+      - "8000:8000"
+    environment:
+      - ENVIRONMENT=production
+      - PORT=8000
+      # Connect to router-agent
+      - ROUTER_AGENT_URL=http://router-agent:8080
+      - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY}
+      - DATAFOR_SEO_TOKEN=${DATAFOR_SEO_TOKEN}
+      - BRIGHT_DATA_API_KEY=${BRIGHT_DATA_API_KEY}
+      - BRIGHTDATA_ZONE_NAME=${BRIGHTDATA_ZONE_NAME}
+    volumes:
+      - content_finder_output:/app/output
+      - content_finder_data:/app/data
+      - content_finder_logs:/app/logs
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+    networks:
+      - content-agents
+    depends_on:
+      - router-agent
+
+  # Router Agent (middle of the chain)
+  router-agent:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    ports:
+      - "8080:8080"
+    environment:
+      - ENVIRONMENT=production
+      - PORT=8080
+      - DB_PATH=/app/data/content_db.sqlite
+      # API keys
+      - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY}
+      - OPENAI_API_KEY=${OPENAI_API_KEY}
+      # Agent communication URLs
+      - REWRITER_AGENT_URL=http://rewriter-agent:8082
+      - COPYWRITER_AGENT_URL=http://copywriter-agent:8083
+    volumes:
+      # Persist database and output files
+      - router_agent_data:/app/data
+      - router_agent_output:/app/output
+      - router_agent_logs:/app/logs
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8080/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+    networks:
+      - content-agents
+    depends_on:
+      - rewriter-agent
+
+  # Rewriter Agent (end of the chain for rewrite operations)
+  rewriter-agent:
+    build:
+      context: .
+      dockerfile: deployment/Dockerfile
+    ports:
+      - "8082:8082"
+    environment:
+      - ENVIRONMENT=production
+      - PORT=8082
+      # API Keys
+      - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY}
+      # WordPress Configuration
+      - WORDPRESS_API_URL=${WORDPRESS_API_URL}
+      - WORDPRESS_USERNAME=${WORDPRESS_USERNAME}
+      - WORDPRESS_PASSWORD=${WORDPRESS_PASSWORD}
+    volumes:
+      # Persist output files and logs
+      - rewriter_agent_output:/app/output
+      - rewriter_agent_logs:/app/logs
+      - rewriter_agent_temp:/app/temp
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8082/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+    networks:
+      - content-agents
+
+  # Optional: Copywriter Agent (end of the chain for new content)
+  # copywriter-agent:
+  #   build:
+  #     context: ../copywriter-agent
+  #     dockerfile: Dockerfile
+  #   ports:
+  #     - "8083:8083"
+  #   environment:
+  #     - ENVIRONMENT=production
+  #     - PORT=8083
+  #     - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY}
+  #     - WORDPRESS_API_URL=${WORDPRESS_API_URL}
+  #     - WORDPRESS_USERNAME=${WORDPRESS_USERNAME}
+  #     - WORDPRESS_PASSWORD=${WORDPRESS_PASSWORD}
+  #   volumes:
+  #     - copywriter_agent_output:/app/output
+  #     - copywriter_agent_logs:/app/logs
+  #   restart: unless-stopped
+  #   healthcheck:
+  #     test: ["CMD", "curl", "-f", "http://localhost:8083/health"]
+  #     interval: 30s
+  #     timeout: 10s
+  #     retries: 3
+  #     start_period: 40s
+  #   networks:
+  #     - content-agents
+
+volumes:
+  content_finder_output:
+    driver: local
+  content_finder_data:
+    driver: local
+  content_finder_logs:
+    driver: local
+  router_agent_data:
+    driver: local
+  router_agent_output:
+    driver: local
+  router_agent_logs:
+    driver: local
+  rewriter_agent_output:
+    driver: local
+  rewriter_agent_logs:
+    driver: local
+  rewriter_agent_temp:
+    driver: local
+  # copywriter_agent_output:
+  #   driver: local
+  # copywriter_agent_logs:
+  #   driver: local
+
+networks:
+  content-agents:
+    driver: bridge

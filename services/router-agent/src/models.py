@@ -1,3 +1,8 @@
+"""
+Updated models.py for Router Agent
+Added agent response fields and better compatibility
+"""
+
 from typing import Dict, List, Optional, Literal, Any
 from pydantic import BaseModel, Field
 from typing_extensions import TypedDict
@@ -43,6 +48,15 @@ class RoutingMetadata(BaseModel):
     timestamp: str
 
 
+class AgentResponse(BaseModel):
+    """Response from called agent (rewriter or copywriter)"""
+    success: bool
+    session_id: Optional[str] = None
+    message: Optional[str] = None
+    error: Optional[str] = None
+    response_data: Optional[Dict[str, Any]] = None
+
+
 class OutputPayload(BaseModel):
     agent_target: Literal["copywriter", "rewriter"]
     keyword: str
@@ -52,12 +66,12 @@ class OutputPayload(BaseModel):
     internal_linking_suggestions: List[str]
     routing_metadata: RoutingMetadata
     existing_content: Optional[Dict[str, Any]] = None
-    # NEW: Add LLM reasoning field
+    # LLM reasoning field
     llm_reasoning: Optional[str] = None
-    # NEW: Add CSV file path
+    # CSV file path
     csv_file: Optional[str] = None
-    # NEW: Add rewriter session ID
-    rewriter_session_id: Optional[str] = None
+    # Agent response
+    agent_response: Optional[AgentResponse] = None
 
 
 class RouterResponse(BaseModel):
@@ -69,13 +83,13 @@ class RouterResponse(BaseModel):
     payload: Optional[OutputPayload] = None
     internal_linking_suggestions: Optional[List[str]] = None
     error: Optional[str] = None
-    # NEW: Add LLM-specific fields
+    # LLM-specific fields
     llm_reasoning: Optional[str] = None
     is_llm_powered: Optional[bool] = False
-    # NEW: Add CSV file path
+    # CSV file path
     csv_file: Optional[str] = None
-    # NEW: Add rewriter session ID
-    rewriter_session_id: Optional[str] = None
+    # Agent response
+    agent_response: Optional[AgentResponse] = None
 
 
 # Database Models
@@ -88,7 +102,7 @@ class ArticleRecord(BaseModel):
     content: str
     keywords: str
     meta_description: str
-    excerpt: Optional[str] = None  # Add excerpt
+    excerpt: Optional[str] = None
     status: str
     similarity_reason: Optional[str] = None
 
@@ -105,14 +119,14 @@ class OrganicResult(BaseModel):
 
 
 class KeywordData(BaseModel):
-    keyword: Optional[str] = None  # Make optional
-    competition: str = "UNKNOWN"  # Default value
-    monthly_searches: int = 0  # Default value
-    people_also_ask: List[str] = []  # Make optional with default
-    people_also_search_for: List[str] = []  # Make optional with default
-    organic_results: List[OrganicResult] = []  # Make optional with default
-    forum: List[str] = []  # Make optional with default
-    total_results_found: int = 0  # Make optional with default
+    keyword: Optional[str] = None
+    competition: str = "UNKNOWN"
+    monthly_searches: int = 0
+    people_also_ask: List[str] = []
+    people_also_search_for: List[str] = []
+    organic_results: List[OrganicResult] = []
+    forum: List[str] = []
+    total_results_found: int = 0
 
 
 class ContentFinderOutput(BaseModel):
@@ -206,9 +220,11 @@ class RouterState(TypedDict):
     internal_linking_suggestions: Optional[List[str]]
     reasoning: Optional[str]
     output_payload: Optional[Dict[str, Any]]
-    # NEW: Add LLM-specific state fields
+    # LLM-specific state fields
     llm_reasoning: Optional[str]
     llm_confidence: Optional[float]
     serp_context: Optional[List[Dict[str, Any]]]
-    # NEW: Add CSV file path
+    # CSV file path
     csv_file: Optional[str]
+    # Agent response
+    agent_response: Optional[Dict[str, Any]]

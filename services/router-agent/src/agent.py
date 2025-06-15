@@ -1,8 +1,18 @@
+"""
+Fixed Router Agent - agent.py
+This version fixes the asyncio event loop issue
+"""
+
 import sys
 import os
 from typing import Dict, Any
 from datetime import datetime
 from langgraph.checkpoint.memory import InMemorySaver
+import requests
+import asyncio
+import logging
+import concurrent.futures
+from threading import Thread
 
 # Add src directory to Python path
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
@@ -18,9 +28,118 @@ from tools import (
 from config import WEBSITES
 from models import RouterState, ContentFinderOutput, SiteInfo, RoutingMetadata, OutputPayload
 from langgraph.graph import StateGraph, START, END
-import logging
 
 logger = logging.getLogger(__name__)
+
+# Configuration for agent services
+REWRITER_AGENT_URL = os.getenv("REWRITER_AGENT_URL", "http://localhost:8082")
+COPYWRITER_AGENT_URL = os.getenv("COPYWRITER_AGENT_URL", "http://localhost:8083")
+
+
+def call_rewriter_agent_sync(csv_file_path: str, keyword: str) -> Dict[str, Any]:
+    """
+    Synchronous call to the Rewriter Agent API with CSV file
+
+    Args:
+        csv_file_path: Path to the CSV file created for rewriter
+        keyword: Target keyword for tracking
+
+    Returns:
+        Response from rewriter agent
+    """
+    try:
+        logger.info(f"🔄 Calling Rewriter Agent for keyword: {keyword}")
+
+        # Read the CSV file
+        with open(csv_file_path, 'rb') as f:
+            files = {'file': (os.path.basename(csv_file_path), f, 'text/csv')}
+
+            # Call rewriter agent
+            response = requests.post(
+                f"{REWRITER_AGENT_URL}/rewrite/csv",
+                files=files,
+                timeout=30
+            )
+
+        if response.status_code == 200:
+            result = response.json()
+            logger.info(f"✅ Rewriter Agent called successfully")
+            logger.info(f"   Session ID: {result.get('session_id')}")
+            return {
+                "success": True,
+                "session_id": result.get("session_id"),
+                "message": result.get("message"),
+                "rewriter_response": result
+            }
+        else:
+            logger.error(f"❌ Rewriter Agent call failed: {response.status_code}")
+            logger.error(f"   Response: {response.text}")
+            return {
+                "success": False,
+                "error": f"HTTP {response.status_code}: {response.text}",
+                "rewriter_response": None
+            }
+
+    except Exception as e:
+        logger.error(f"❌ Error calling Rewriter Agent: {e}")
+        return {
+            "success": False,
+            "error": str(e),
+            "rewriter_response": None
+        }
+
+
+def call_copywriter_agent_sync(csv_file_path: str, keyword: str) -> Dict[str, Any]:
+    """
+    Synchronous call to the Copywriter Agent API with CSV file
+
+    Args:
+        csv_file_path: Path to the CSV file created for copywriter
+        keyword: Target keyword for tracking
+
+    Returns:
+        Response from copywriter agent
+    """
+    try:
+        logger.info(f"🔄 Calling Copywriter Agent for keyword: {keyword}")
+
+        # Read the CSV file
+        with open(csv_file_path, 'rb') as f:
+            files = {'file': (os.path.basename(csv_file_path), f, 'text/csv')}
+
+            # Call copywriter agent (assuming similar API structure)
+            response = requests.post(
+                f"{COPYWRITER_AGENT_URL}/create/csv",
+                files=files,
+                timeout=30
+            )
+
+        if response.status_code == 200:
+            result = response.json()
+            logger.info(f"✅ Copywriter Agent called successfully")
+            logger.info(f"   Session ID: {result.get('session_id')}")
+            return {
+                "success": True,
+                "session_id": result.get("session_id"),
+                "message": result.get("message"),
+                "copywriter_response": result
+            }
+        else:
+            logger.error(f"❌ Copywriter Agent call failed: {response.status_code}")
+            logger.error(f"   Response: {response.text}")
+            return {
+                "success": False,
+                "error": f"HTTP {response.status_code}: {response.text}",
+                "copywriter_response": None
+            }
+
+    except Exception as e:
+        logger.error(f"❌ Error calling Copywriter Agent: {e}")
+        return {
+            "success": False,
+            "error": str(e),
+            "copywriter_response": None
+        }
 
 
 def intelligent_routing_node(state: RouterState) -> RouterState:
@@ -116,19 +235,22 @@ def intelligent_routing_node(state: RouterState) -> RouterState:
         logger.info(f"   📝 Decision: {routing_decision.upper()}")
         logger.info(f"   📊 Confidence: {confidence:.1%}")
 
-        # Import CSV utilities and HTTP client
+        # Import CSV utilities
         from csv_utils import (
             create_copywriter_csv,
             create_rewriter_csv,
             extract_existing_content_url,
-            get_keyword_data_from_content_finder
+            get_keyword_data_from_content_finder,
+            validate_rewriter_csv
         )
-        import requests
 
         # Get keyword data for CSV generation
         keyword_data = get_keyword_data_from_content_finder(input_data, keyword)
 
-        # Generate CSV and print decision output
+        # Generate CSV and call appropriate agent
+        agent_response = None
+        csv_file = None
+
         if routing_decision == "rewriter":
             # Extract URL for existing content
             existing_url = extract_existing_content_url(content_analysis[selected_niche])
@@ -153,6 +275,25 @@ def intelligent_routing_node(state: RouterState) -> RouterState:
             print(f"URL to rewrite: {existing_url}")
             print(f"📊 CSV created: {csv_file}")
             print("=" * 50)
+
+            # Validate CSV before calling agent
+            if csv_file and validate_rewriter_csv(csv_file):
+                # Call the rewriter agent synchronously
+                agent_response = call_rewriter_agent_sync(csv_file, keyword)
+
+                if agent_response["success"]:
+                    logger.info(f"✅ Rewriter Agent called successfully")
+                    logger.info(f"   Session ID: {agent_response.get('session_id')}")
+                else:
+                    logger.error(f"❌ Rewriter Agent call failed: {agent_response.get('error')}")
+            else:
+                logger.error(f"❌ CSV validation failed for rewriter")
+                agent_response = {
+                    "success": False,
+                    "error": "CSV validation failed",
+                    "rewriter_response": None
+                }
+
         else:
             # Create copywriter CSV
             csv_file = create_copywriter_csv(
@@ -173,6 +314,16 @@ def intelligent_routing_node(state: RouterState) -> RouterState:
             print(f"Similar keywords: {[k['keyword'] for k in similar_keywords[:3]]}")
             print(f"📊 CSV created: {csv_file}")
             print("=" * 50)
+
+            # Call the copywriter agent synchronously
+            if csv_file:
+                agent_response = call_copywriter_agent_sync(csv_file, keyword)
+
+                if agent_response["success"]:
+                    logger.info(f"✅ Copywriter Agent called successfully")
+                    logger.info(f"   Session ID: {agent_response.get('session_id')}")
+                else:
+                    logger.error(f"❌ Copywriter Agent call failed: {agent_response.get('error')}")
 
         # Create output payload
         output_payload = {
@@ -198,7 +349,8 @@ def intelligent_routing_node(state: RouterState) -> RouterState:
             ),
             "existing_content": content_analysis[selected_niche].get('content'),
             "llm_reasoning": reasoning,
-            "csv_file": csv_file  # Add CSV file path to payload
+            "csv_file": csv_file,
+            "agent_response": agent_response  # Include agent response
         }
 
         return {
@@ -219,7 +371,8 @@ def intelligent_routing_node(state: RouterState) -> RouterState:
             "output_payload": output_payload,
             "internal_linking_suggestions": internal_links,
             "existing_content": content_analysis[selected_niche],
-            "csv_file": csv_file  # Add CSV file path to state
+            "csv_file": csv_file,
+            "agent_response": agent_response  # Include agent response in state
         }
 
     except Exception as e:
@@ -244,7 +397,8 @@ def intelligent_routing_node(state: RouterState) -> RouterState:
             "output_payload": None,
             "internal_linking_suggestions": [],
             "existing_content": None,
-            "csv_file": None
+            "csv_file": None,
+            "agent_response": None
         }
 
 
@@ -296,7 +450,8 @@ async def process_content_finder_output(content_data: ContentFinderOutput) -> Di
             "confidence_score": None,
             "internal_linking_suggestions": None,
             "reasoning": None,
-            "output_payload": None
+            "output_payload": None,
+            "agent_response": None  # Add agent response to state
         }
 
         logger.info(f"🔄 Executing streamlined workflow (session: {session_id})")
@@ -316,7 +471,8 @@ async def process_content_finder_output(content_data: ContentFinderOutput) -> Di
                 "reasoning": result["reasoning"],
                 "payload": OutputPayload(**result["output_payload"]),
                 "internal_linking_suggestions": result["internal_linking_suggestions"],
-                "csv_file": result.get("csv_file"),  # Include CSV file path
+                "csv_file": result.get("csv_file"),
+                "agent_response": result.get("agent_response"),  # Include agent response
                 "is_llm_powered": True,
                 "is_streamlined": True
             }
@@ -326,7 +482,8 @@ async def process_content_finder_output(content_data: ContentFinderOutput) -> Di
                 "success": False,
                 "error": "Streamlined workflow failed - missing routing decision",
                 "routing_decision": None,
-                "payload": None
+                "payload": None,
+                "agent_response": None
             }
 
     except Exception as e:
@@ -335,5 +492,6 @@ async def process_content_finder_output(content_data: ContentFinderOutput) -> Di
             "success": False,
             "error": str(e),
             "routing_decision": None,
-            "payload": None
+            "payload": None,
+            "agent_response": None
         }
