@@ -116,13 +116,14 @@ def intelligent_routing_node(state: RouterState) -> RouterState:
         logger.info(f"   📝 Decision: {routing_decision.upper()}")
         logger.info(f"   📊 Confidence: {confidence:.1%}")
 
-        # Import CSV utilities
+        # Import CSV utilities and HTTP client
         from csv_utils import (
             create_copywriter_csv,
             create_rewriter_csv,
             extract_existing_content_url,
             get_keyword_data_from_content_finder
         )
+        import requests
 
         # Get keyword data for CSV generation
         keyword_data = get_keyword_data_from_content_finder(input_data, keyword)

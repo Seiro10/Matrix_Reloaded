@@ -56,6 +56,8 @@ class OutputPayload(BaseModel):
     llm_reasoning: Optional[str] = None
     # NEW: Add CSV file path
     csv_file: Optional[str] = None
+    # NEW: Add rewriter session ID
+    rewriter_session_id: Optional[str] = None
 
 
 class RouterResponse(BaseModel):
@@ -72,6 +74,8 @@ class RouterResponse(BaseModel):
     is_llm_powered: Optional[bool] = False
     # NEW: Add CSV file path
     csv_file: Optional[str] = None
+    # NEW: Add rewriter session ID
+    rewriter_session_id: Optional[str] = None
 
 
 # Database Models

@@ -1,0 +1,382 @@
+# Rewriter Agent
+
+A LangGraph-based intelligent article rewriting service that updates and modernizes existing WordPress articles while preserving their structure and essence.
+
+## Overview
+
+The Rewriter Agent is part of the AI-Copywriter ecosystem, designed to automatically update existing articles with fresh content from competitor analysis. It maintains the original article's structure, tone, and media while integrating new information and SEO improvements.
+
+## Features
+
+### 🔄 Intelligent Article Analysis
+- Fetches original articles via WordPress REST API
+- Analyzes competitor content for insights
+- Identifies outdated sections and improvement opportunities
+
+### 🧠 LLM-Powered Strategy Generation
+- Uses Anthropic's Claude for strategic rewriting decisions
+- Maintains original tone and structure
+- Integrates competitive intelligence seamlessly
+
+### 📝 Content Preservation
+- Preserves HTML structure and formatting
+- Keeps media elements (images, videos) intact
+- Maintains SEO metadata and internal links
+
+### 🚀 WordPress Integration
+- JWT authentication with WordPress
+- Direct publishing to WordPress (private mode for review)
+- Automatic content backup and versioning
+
+## Architecture
+
+```
+┌─────────────────┐    ┌──────────────────┐    ┌─────────────────┐
+│   Router Agent  │───▶│  Rewriter Agent  │───▶│   WordPress     │
+│   (CSV Input)   │    │   (LangGraph)    │    │   (Updated)     │
+└─────────────────┘    └──────────────────┘    └─────────────────┘
+                               │
+                       ┌───────▼────────┐
+                       │  Anthropic     │
+                       │  Claude LLM    │
+                       └────────────────┘
+```
+
+### LangGraph Workflow
+
+```mermaid
+graph TD
+    A[Start] --> B[Fetch Original Article]
+    B --> C[Analyze Competitors]
+    C --> D[Generate Strategy]
+    D --> E[Rewrite Content]
+    E --> F[Publish to WordPress]
+    F --> G[End]
+```
+
+## Installation
+
+### Prerequisites
+
+- Docker and Docker Compose
+- Python 3.11+ (for local development)
+- WordPress site with JWT authentication plugin
+- Anthropic API key
+
+### Quick Start
+
+1. **Clone and Setup**
+   ```bash
+   git clone <repository>
+   cd rewriter-agent
+   cp .env.example .env
+   ```
+
+2. **Configure Environment**
+   Edit `.env` with your credentials:
+   ```bash
+   ANTHROPIC_API_KEY=your_key_here
+   WORDPRESS_API_URL=https://yoursite.com/wp-json
+   WORDPRESS_USERNAME=your_username
+   WORDPRESS_PASSWORD=your_password
+   ```
+
+3. **Deploy with Docker**
+   ```bash
+   chmod +x deploy.sh
+   ./deploy.sh build
+   ./deploy.sh start
+   ```
+
+4. **Verify Installation**
+   ```bash
+   ./deploy.sh status
+   ./deploy.sh test
+   ```
+
+## Usage
+
+### API Endpoints
+
+#### POST `/rewrite/csv`
+Rewrite article from CSV input (Router Agent format)
+
+```bash
+curl -X POST \
+  http://localhost:8081/rewrite/csv \
+  -F "file=@rewriter_input.csv"
+```
+
+**CSV Format:**
+```csv
+Url,KW,competition,Site,confidence,monthly_searches,people_also_ask,forum,position1,title1,url1,snippet1,content1,structure1,headlines1,metadescription1,...
+https://site.com/article,keyword,HIGH,Site,0.85,1200,"Question1;Question2","forum1;forum2",1,"Title 1","URL 1","Snippet 1","Content 1","Structure 1","Headlines 1","Meta 1",...
+```
+
+#### POST `/rewrite/json`
+Rewrite article from JSON input
+
+```bash
+curl -X POST \
+  http://localhost:8081/rewrite/json \
+  -H "Content-Type: application/json" \
+  -d '{
+    "keyword": "best gaming keyboard",
+    "url_to_rewrite": "https://site.com/article",
+    "site": "Gaming Site",
+    "confidence": 0.85,
+    "monthly_searches": 1200,
+    "people_also_ask": ["Question 1", "Question 2"],
+    "competitors": [...]
+  }'
+```
+
+#### GET `/rewrite/status/{session_id}`
+Check rewriting progress
+
+```bash
+curl http://localhost:8081/rewrite/status/rewriter_20241215_123456
+```
+
+#### GET `/rewrite/sessions`
+List active rewriting sessions
+
+```bash
+curl http://localhost:8081/rewrite/sessions
+```
+
+### Integration with Router Agent
+
+The Rewriter Agent is designed to work seamlessly with the Router Agent:
+
+1. **Router Agent** analyzes keywords and determines rewriting is needed
+2. **Router Agent** generates CSV with competitor data and target URL
+3. **Rewriter Agent** processes CSV and updates the article
+4. **WordPress** receives updated content in private mode for review
+
+## Configuration
+
+### WordPress Setup
+
+1. **Install JWT Authentication Plugin**
+   ```bash
+   # Install JWT Authentication for WP REST API plugin
+   # Add to wp-config.php:
+   define('JWT_AUTH_SECRET_KEY', 'your-secret-key');
+   define('JWT_AUTH_CORS_ENABLE', true);
+   ```
+
+2. **Enable REST API**
+   Ensure WordPress REST API is accessible at `/wp-json/wp/v2/`
+
+3. **User Permissions**
+   User must have `edit_posts` capability
+
+### Environment Variables
+
+| Variable | Description | Required |
+|----------|-------------|----------|
+| `ANTHROPIC_API_KEY` | Anthropic Claude API key | ✅ |
+| `WORDPRESS_API_URL` | WordPress REST API base URL | ✅ |
+| `WORDPRESS_USERNAME` | WordPress username | ✅ |
+| `WORDPRESS_PASSWORD` | WordPress password | ✅ |
+| `ENVIRONMENT` | Environment (development/production) | ❌ |
+| `PORT` | API server port (default: 8081) | ❌ |
+
+## Development
+
+### Local Development
+
+1. **Setup Python Environment**
+   ```bash
+   python -m venv venv
+   source venv/bin/activate  # or `venv\Scripts\activate` on Windows
+   pip install -r requirements.txt
+   ```
+
+2. **Run Locally**
+   ```bash
+   python -m uvicorn src.rewriter_agent_api:app --host 0.0.0.0 --port 8081 --reload
+   ```
+
+3. **Run Tests**
+   ```bash
+   python test_rewriter_agent.py
+   ```
+
+### Testing
+
+The test suite includes:
+- **CSV Parsing Tests** - Validates input data processing
+- **Workflow Tests** - Tests complete rewriting pipeline
+- **API Integration Tests** - Validates REST API functionality
+
+```bash
+# Run all tests
+./deploy.sh test
+
+# Run specific test components
+python test_rewriter_agent.py
+```
+
+### Debugging
+
+1. **Check Logs**
+   ```bash
+   ./deploy.sh logs
+   ```
+
+2. **Service Status**
+   ```bash
+   ./deploy.sh status
+   ```
+
+3. **Manual Testing**
+   ```bash
+   # Health check
+   curl http://localhost:8081/health
+
+   # Test with sample data
+   curl -X POST http://localhost:8081/rewrite/json \
+     -H "Content-Type: application/json" \
+     -d @test_data.json
+   ```
+
+## Monitoring
+
+### Health Checks
+
+The service provides comprehensive health monitoring:
+
+```bash
+# Basic health
+GET /health
+
+# Service status with metrics
+./deploy.sh status
+```
+
+### Logging
+
+Logs are structured and include:
+- Request/response details
+- LLM interaction logs
+- WordPress API calls
+- Error tracking and debugging info
+
+### Metrics
+
+Track key performance indicators:
+- **Processing Time** - Average time per rewrite
+- **Success Rate** - Percentage of successful rewrites
+- **Error Types** - Categorized failure modes
+- **WordPress API Performance** - API response times
+
+## Troubleshooting
+
+### Common Issues
+
+1. **WordPress Authentication Failed**
+   ```
+   ❌ WordPress authentication failed
+   ```
+   - Verify JWT plugin is installed and configured
+   - Check username/password in .env
+   - Ensure user has proper permissions
+
+2. **Article Not Found**
+   ```
+   ❌ No article found for URL: https://...
+   ```
+   - Verify URL is correct and article exists
+   - Check WordPress site is accessible
+   - Ensure article is published (not draft)
+
+3. **LLM API Errors**
+   ```
+   ❌ Error generating strategy: API rate limit
+   ```
+   - Check Anthropic API key is valid
+   - Verify rate limits and usage quotas
+   - Implement retry logic if needed
+
+4. **Docker Issues**
+   ```
+   ❌ Service is not responding
+   ```
+   - Check Docker container status: `docker ps`
+   - Review logs: `./deploy.sh logs`
+   - Verify port 8081 is available
+
+### Performance Optimization
+
+1. **LLM Optimization**
+   - Adjust temperature and token limits
+   - Use prompt caching for repeated patterns
+   - Implement request batching
+
+2. **WordPress API**
+   - Use connection pooling
+   - Implement request retries
+   - Cache authentication tokens
+
+3. **Memory Management**
+   - Monitor container memory usage
+   - Implement cleanup for temporary files
+   - Use streaming for large content
+
+## Integration Examples
+
+### With Router Agent
+
+```python
+import requests
+
+# Router Agent determines rewriting is needed
+router_result = await router_agent.process(keyword_data)
+
+if router_result["routing_decision"] == "rewriter":
+    # Send to Rewriter Agent
+    csv_file = router_result["csv_file"]
+
+    with open(csv_file, 'rb') as f:
+        response = requests.post(
+            "http://rewriter-agent:8081/rewrite/csv",
+            files={"file": f}
+        )
+
+    session_id = response.json()["session_id"]
+    # Monitor progress...
+```
+
+### Webhook Integration
+
+```python
+# Optional: Setup webhook for completion notifications
+@app.post("/rewriter/webhook")
+async def rewriter_webhook(data: dict):
+    if data["status"] == "completed":
+        # Article rewritten successfully
+        article_id = data["article_id"]
+        # Trigger additional processes...
+```
+
+## Contributing
+
+1. Fork the repository
+2. Create a feature branch
+3. Add tests for new functionality
+4. Ensure all tests pass
+5. Submit a pull request
+
+## License
+
+This project is part of the AI-Copywriter ecosystem. See LICENSE file for details.
+
+## Support
+
+For issues and questions:
+- Check the troubleshooting section
+- Review logs with `./deploy.sh logs`
+- Open an issue with detailed error information
+- Include environment details and reproduction steps

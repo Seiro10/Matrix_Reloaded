@@ -233,7 +233,11 @@ def extract_existing_content_url(existing_content: Dict[str, Any]) -> str:
     source = existing_content.get('source')
     content = existing_content.get('content')
 
-    if source == 'database' and content:
+    if source == 'wordpress_api' and content:
+        # WordPress API content has direct URL
+        return content.get('url', 'WordPress content - no URL found')
+
+    elif source == 'database' and content:
         # Database content has direct URL
         return content.get('url', 'Database content - no URL')
 
