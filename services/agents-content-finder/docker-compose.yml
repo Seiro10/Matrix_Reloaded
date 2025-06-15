@@ -1,0 +1,39 @@
+services:
+  # Content Finder Agent (connects to existing router-agent)
+  content-finder:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    ports:
+      - "8000:8000"
+    environment:
+      - ENVIRONMENT=production
+      - PORT=8000
+      # Connect to existing router-agent on host network
+      - ROUTER_AGENT_URL=http://host.docker.internal:8080
+      - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY}
+      - DATAFOR_SEO_TOKEN=${DATAFOR_SEO_TOKEN}
+      - BRIGHT_DATA_API_KEY=${BRIGHT_DATA_API_KEY}
+      - BRIGHTDATA_ZONE_NAME=${BRIGHTDATA_ZONE_NAME}
+    volumes:
+      - content_finder_output:/app/output
+      - content_finder_data:/app/data
+      - content_finder_logs:/app/logs
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+    # Use host network to connect to existing router-agent
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+
+volumes:
+  content_finder_output:
+    driver: local
+  content_finder_data:
+    driver: local
+  content_finder_logs:
+    driver: local

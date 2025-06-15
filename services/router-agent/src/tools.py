@@ -9,6 +9,7 @@ from urllib.parse import urlparse
 import requests
 from bs4 import BeautifulSoup
 import logging
+import json
 from pydantic import BaseModel, Field
 
 # Add src directory to Python path
@@ -79,17 +80,22 @@ def make_intelligent_routing_decision(
         for kw in similar_keywords[:5]
     ])
 
-    # Prepare existing content summary
-    content_summary = "No existing content found"
-    if existing_content_summary.get('content_found'):
-        source = existing_content_summary.get('source', 'unknown')
-        confidence = existing_content_summary.get('confidence', 0)
-        if source == 'database':
-            content_data = existing_content_summary.get('content', {})
-            content_summary = f"Database: Found '{content_data.get('title', 'N/A')}' (confidence: {confidence:.1%})"
-        else:
-            matches = existing_content_summary.get('content', {}).get('matching_urls', [])
-            content_summary = f"Sitemap: Found {len(matches)} similar URLs (best match: {confidence:.1%})"
+    # Prepare existing content summary based on best match
+    content_summary = "No existing content found across all sites"
+    if existing_content_summary.get('best_match') and existing_content_summary['best_match'].get('content_found'):
+        best_match = existing_content_summary['best_match']
+        best_site = existing_content_summary.get('best_site', 'unknown')
+        confidence = best_match.get('confidence', 0)
+        reason = best_match.get('reason', '')
+        best_match_url = best_match.get('content', {}).get('url', 'N/A')
+
+        content_summary = f"""BEST MATCH FOUND:
+Site: {best_site}
+URL: {best_match_url}
+Confidence: {confidence:.1%}
+Analysis: {reason}
+
+Overall analysis: {existing_content_summary.get('all_sites_summary', '')}"""
 
     # Prepare SERP context
     serp_summary = "No SERP data available"
@@ -126,6 +132,11 @@ Analyze this keyword and make complete routing decisions:
 **EXISTING CONTENT ANALYSIS:**
 {content_summary}
 
+The content analysis was performed using WordPress API data including:
+- Article titles, excerpts, meta descriptions, URLs, and slugs
+- Semantic similarity analysis by AI
+- Full article information from JSON files
+
 **SERP COMPETITIVE CONTEXT:**
 {serp_summary}
 
@@ -150,10 +161,15 @@ Provide clear reasoning for both decisions and overall confidence level.
             HumanMessage(content=human_prompt)
         ]
 
-        logger.info(f"Making routing decision for '{keyword}'...")
+        logger.info(f"🧠 Making intelligent routing decision for '{keyword}'...")
         response = llm.invoke(messages)
 
         decision = parser.parse(response.content)
+
+        logger.info(f"✅ Intelligent decision complete:")
+        logger.info(f"   🎯 Site: {decision.selected_site_niche}")
+        logger.info(f"   📝 Route: {decision.routing_decision}")
+        logger.info(f"   📊 Confidence: {decision.confidence:.1%}")
 
         return {
             "selected_site_niche": decision.selected_site_niche,
@@ -163,6 +179,158 @@ Provide clear reasoning for both decisions and overall confidence level.
             "routing_reasoning": decision.routing_reasoning,
             "content_strategy": decision.content_strategy,
             "combined_reasoning": f"Site: {decision.site_reasoning}\n\nRouting: {decision.routing_reasoning}\n\nStrategy: {decision.content_strategy}"
+        }
+
+    except Exception as e:
+        logger.error(f"❌ Error in intelligent routing decision: {e}")
+        return _fallback_intelligent_decision(keyword, existing_content_summary)
+
+
+class ContentMatch(BaseModel):
+    """Content similarity analysis result"""
+    has_similar_content: bool = Field(description="Whether similar content exists")
+    best_match_url: str = Field(description="URL of the most similar content")
+    confidence: float = Field(description="Similarity confidence 0-1")
+    reasoning: str = Field(description="Why this content is similar or not")
+
+
+@tool
+def fetch_wordpress_articles(wordpress_api_url: str) -> str:
+    """Fetch all articles from WordPress API and save to JSON"""
+    articles = []
+    page = 1
+    per_page = 100
+
+    while True:
+        response = requests.get(f"{wordpress_api_url}posts", params={
+            "page": page,
+            "per_page": per_page,
+            "status": "publish",
+            "_embed": True  # Get more content data
+        })
+
+        if response.status_code != 200:
+            break
+
+        posts = response.json()
+        if not posts:
+            break
+
+        for post in posts:
+            # Try to get more content from different sources
+            excerpt_content = post["excerpt"]["rendered"]
+
+            # If excerpt is too short, try to get more from content
+            if len(excerpt_content) < 200:
+                content = post.get("content", {}).get("rendered", "")
+                if content:
+                    # Extract first 300 chars from content, remove HTML
+                    from bs4 import BeautifulSoup
+                    clean_content = BeautifulSoup(content, 'html.parser').get_text()
+                    excerpt_content = clean_content[:300] + "..." if len(clean_content) > 300 else clean_content
+
+            articles.append({
+                "id": post["id"],
+                "title": post["title"]["rendered"],
+                "url": post["link"],
+                "slug": post["slug"],
+                "excerpt": excerpt_content,
+                "meta_description": post.get("yoast_head_json", {}).get("og_description", ""),
+                "date": post["date"]
+            })
+
+        page += 1
+
+    # Save to JSON file
+    site_name = wordpress_api_url.split("//")[1].split("/")[0].replace(".", "_")
+    json_file = f"./data/{site_name}_articles.json"
+    os.makedirs("./data", exist_ok=True)
+
+    with open(json_file, 'w', encoding='utf-8') as f:
+        json.dump(articles, f, ensure_ascii=False, indent=2)
+
+    return json_file
+
+
+@tool
+def analyze_content_similarity(keyword: str, site_articles_file: str) -> Dict[str, Any]:
+    """Use LLM to analyze content similarity with existing articles"""
+
+    try:
+        with open(site_articles_file, 'r', encoding='utf-8') as f:
+            articles = json.load(f)
+
+        articles_text = "\n".join([
+            f"- Title: {article['title']}\n  URL: {article['url']}\n  Excerpt: {article['excerpt'][:200]}...\n  Meta: {article['meta_description']}"
+            for article in articles[:20]  # Limit to first 20 for token limits
+        ])
+
+        system_prompt = """You are an expert content analyst. Analyze whether existing articles are similar enough to the target keyword to warrant rewriting instead of creating new content.
+
+Consider ALL available information:
+- Title: Main topic and keywords
+- Excerpt: Content summary and context  
+- Meta Description: SEO focus and intent
+- URL/Slug: Topic indicators
+- Content overlap and semantic similarity
+
+A match should be content that covers the same topic/intent with significant overlap, not just keyword mentions. Look for semantic similarity across all fields."""
+
+        human_prompt = f"""
+Target Keyword: {keyword}
+
+Existing Articles:
+{articles_text}
+
+Analysis Instructions:
+1. Compare the target keyword with EACH article's title, excerpt, meta description, and URL
+2. Look for semantic similarity, not just exact keyword matches
+3. Consider topic overlap and content intent
+4. Identify the article with the highest content relevance
+
+Decision Criteria:
+- High similarity (>0.7): Strong topic overlap, same intent, rewrite recommended
+- Medium similarity (0.4-0.7): Some overlap, evaluate if worth updating
+- Low similarity (<0.4): Different topics, create new content
+
+Provide:
+1. Your similarity assessment
+2. The best matching article URL (if any)
+3. Confidence score (0.0-1.0)
+4. Detailed reasoning considering all article information
+"""
+
+        parser = PydanticOutputParser(pydantic_object=ContentMatch)
+        messages = [
+            SystemMessage(content=system_prompt + f"\n\n{parser.get_format_instructions()}"),
+            HumanMessage(content=human_prompt)
+        ]
+
+        response = llm.invoke(messages)
+        result = parser.parse(response.content)
+
+        logger.info(f"🤖 LLM Analysis Result:")
+        logger.info(f"   Similar content found: {result.has_similar_content}")
+        logger.info(f"   Best match URL: {result.best_match_url}")
+        logger.info(f"   Confidence: {result.confidence:.1%}")
+        logger.info(f"   Reasoning: {result.reasoning}")
+
+        return {
+            "content_found": result.has_similar_content,
+            "source": "wordpress_api",
+            "content": {"url": result.best_match_url} if result.has_similar_content else None,
+            "confidence": result.confidence,
+            "reason": result.reasoning
+        }
+
+    except Exception as e:
+        logger.error(f"❌ Error in content similarity analysis: {e}")
+        return {
+            "content_found": False,
+            "source": "wordpress_api",
+            "content": None,
+            "confidence": 0.0,
+            "reason": f"Error analyzing content: {str(e)}"
         }
 
     except Exception as e:
@@ -180,7 +348,7 @@ def fetch_sitemap_content(sitemap_url: str) -> List[str]:
             'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
         }
 
-        logger.info(f"Fetching sitemap: {sitemap_url}")
+        logger.info(f"📄 Fetching sitemap: {sitemap_url}")
         response = requests.get(sitemap_url, headers=headers, timeout=15)
 
         if response.status_code == 200:
@@ -218,7 +386,7 @@ def analyze_existing_content(keyword: str, site_id: int, sitemap_urls: List[str]
     # 1. Check database first
     db_result = db.search_similar_content(site_id, keyword)
     if db_result:
-        logger.info(f"Found in database: {db_result['title']}")
+        logger.info(f"   ✅ Found in database: {db_result['title']}")
         return {
             "content_found": True,
             "source": "database",
@@ -248,7 +416,7 @@ def analyze_existing_content(keyword: str, site_id: int, sitemap_urls: List[str]
     if matching_urls:
         matching_urls.sort(key=lambda x: x['match_score'], reverse=True)
         best_match = matching_urls[0]
-        logger.info(f" Found {len(matching_urls)} sitemap matches (best: {best_match['match_score']:.1%})")
+        logger.info(f"   ✅ Found {len(matching_urls)} sitemap matches (best: {best_match['match_score']:.1%})")
 
         return {
             "content_found": True,
@@ -258,7 +426,7 @@ def analyze_existing_content(keyword: str, site_id: int, sitemap_urls: List[str]
             "summary": f"Sitemap: {len(matching_urls)} URLs (best: {best_match['match_score']:.1%})"
         }
 
-    logger.info(f" No existing content found (Database and Sitemap)")
+    logger.info(f"   ❌ No existing content found")
     return {
         "content_found": False,
         "source": None,

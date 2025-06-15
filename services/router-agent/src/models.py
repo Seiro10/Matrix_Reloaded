@@ -10,6 +10,7 @@ class SimilarKeyword(BaseModel):
     monthly_searches: int
     competition: str
 
+
 class TopResult(BaseModel):
     url: str
     title: str
@@ -17,6 +18,7 @@ class TopResult(BaseModel):
     content: str
     content_structure: List[str]
     publication_date: str
+
 
 class SERPAnalysis(BaseModel):
     top_results: List[TopResult]
@@ -34,10 +36,12 @@ class SiteInfo(BaseModel):
     sitemap_url: str
     wordpress_api_url: str
 
+
 class RoutingMetadata(BaseModel):
     confidence_score: float
     content_source: Optional[str] = None
     timestamp: str
+
 
 class OutputPayload(BaseModel):
     agent_target: Literal["copywriter", "rewriter"]
@@ -52,6 +56,9 @@ class OutputPayload(BaseModel):
     llm_reasoning: Optional[str] = None
     # NEW: Add CSV file path
     csv_file: Optional[str] = None
+    # NEW: Add rewriter session ID
+    rewriter_session_id: Optional[str] = None
+
 
 class RouterResponse(BaseModel):
     success: bool
@@ -67,6 +74,9 @@ class RouterResponse(BaseModel):
     is_llm_powered: Optional[bool] = False
     # NEW: Add CSV file path
     csv_file: Optional[str] = None
+    # NEW: Add rewriter session ID
+    rewriter_session_id: Optional[str] = None
+
 
 # Database Models
 class ArticleRecord(BaseModel):
@@ -78,6 +88,7 @@ class ArticleRecord(BaseModel):
     content: str
     keywords: str
     meta_description: str
+    excerpt: Optional[str] = None  # Add excerpt
     status: str
     similarity_reason: Optional[str] = None
 
@@ -92,15 +103,16 @@ class OrganicResult(BaseModel):
     headlines: Optional[List[str]] = None
     metadescription: Optional[str] = None
 
+
 class KeywordData(BaseModel):
-    keyword: str
-    competition: str
-    monthly_searches: int
-    people_also_ask: List[str]
-    people_also_search_for: List[str]
-    organic_results: List[OrganicResult]
-    forum: List[str]
-    total_results_found: int
+    keyword: Optional[str] = None  # Make optional
+    competition: str = "UNKNOWN"  # Default value
+    monthly_searches: int = 0  # Default value
+    people_also_ask: List[str] = []  # Make optional with default
+    people_also_search_for: List[str] = []  # Make optional with default
+    organic_results: List[OrganicResult] = []  # Make optional with default
+    forum: List[str] = []  # Make optional with default
+    total_results_found: int = 0  # Make optional with default
 
 
 class ContentFinderOutput(BaseModel):
@@ -108,7 +120,18 @@ class ContentFinderOutput(BaseModel):
 
     def get_primary_keyword(self) -> str:
         """Return the first keyword as primary"""
-        return list(self.keywords_data.keys())[0] if self.keywords_data else ""
+        if not self.keywords_data:
+            return ""
+
+        # Get the first key (which is the keyword)
+        primary_key = list(self.keywords_data.keys())[0]
+
+        # If the keyword field is missing, use the key
+        keyword_data = self.keywords_data[primary_key]
+        if keyword_data.keyword:
+            return keyword_data.keyword
+        else:
+            return primary_key  # Use the dict key as keyword
 
     def get_similar_keywords(self) -> List[SimilarKeyword]:
         """Build similar keywords from people_also_search_for of primary keyword"""
