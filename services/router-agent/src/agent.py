@@ -56,7 +56,7 @@ def call_rewriter_agent_sync(csv_file_path: str, keyword: str) -> Dict[str, Any]
 
             # Call rewriter agent
             response = requests.post(
-                f"{REWRITER_AGENT_URL}/rewrite/csv",
+                f"{REWRITER_AGENT_URL}/update-blog-article",
                 files=files,
                 timeout=30
             )

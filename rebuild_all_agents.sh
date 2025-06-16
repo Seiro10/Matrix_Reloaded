@@ -1,6 +1,6 @@
 #!/bin/bash
 
-# Complete rebuild script for all content agents
+# Complete rebuild script for all content agents using unified docker-compose.yaml
 # Usage: ./rebuild_all_agents.sh
 
 set -e
@@ -28,194 +28,124 @@ log_blue() {
     echo -e "${BLUE}[BUILD]${NC} $1"
 }
 
-# Configuration
+# Check if docker-compose.yaml exists
+if [ ! -f "docker-compose.yaml" ]; then
+    log_error "❌ docker-compose.yaml not found in current directory!"
+    log_info "Please run this script from the root directory containing docker-compose.yaml"
+    exit 1
+fi
+
+log_info "🚀 Starting complete rebuild process using unified docker-compose.yaml..."
+
+# Services defined in docker-compose.yaml
 SERVICES=(
-    "content-finder:8000:agents-content-finder"
-    "router-agent:8080:router-agent"
-    "rewriter-agent:8082:rewriter-agent"
+    "content-finder:8000"
+    "router-agent:8080"
+    "rewriter-agent:8082"
 )
 
-log_info "🚀 Starting complete rebuild process for all content agents..."
 echo "Services to rebuild:"
 for service in "${SERVICES[@]}"; do
-    IFS=':' read -r name port path <<< "$service"
-    echo "  - $name (port $port) from $path"
+    IFS=':' read -r name port <<< "$service"
+    echo "  - $name (port $port)"
 done
 echo ""
 
-# Function to stop and remove container
-cleanup_container() {
-    local container_name=$1
-    log_info "🛑 Stopping container: $container_name"
-    docker stop "$container_name" 2>/dev/null || echo "Container $container_name not running"
+# Stop all services
+log_info "🛑 Stopping all services..."
+docker compose down
 
-    log_info "🗑️ Removing container: $container_name"
-    docker rm "$container_name" 2>/dev/null || echo "Container $container_name not found"
-}
-
-# Function to remove image
-cleanup_image() {
-    local image_name=$1
-    log_info "🗑️ Removing image: $image_name"
-    docker rmi "$image_name" 2>/dev/null || echo "Image $image_name not found"
-}
-
-# Stop and remove all containers
-log_info "🧹 Cleaning up existing containers..."
-cleanup_container "agents-agents-content-finder-content-finder-1"
-cleanup_container "router-agent-router-agent-1"
-cleanup_container "deployment-rewriter-agent-1"
+# Remove all related containers (cleanup any orphaned containers)
+log_info "🧹 Cleaning up any orphaned containers..."
+docker stop deployment-rewriter-agent-1 2>/dev/null || true
+docker stop router-agent-router-agent-1 2>/dev/null || true
+docker stop agents-content-finder-content-finder-1 2>/dev/null || true
+docker rm deployment-rewriter-agent-1 2>/dev/null || true
+docker rm router-agent-router-agent-1 2>/dev/null || true
+docker rm agents-content-finder-content-finder-1 2>/dev/null || true
 
 # Remove all images
-log_info "🧹 Cleaning up existing images..."
-cleanup_image "agents-agents-content-finder-content-finder"
-cleanup_image "router-agent-router-agent"
-cleanup_image "deployment-rewriter-agent"
+log_info "🗑️ Removing existing images..."
+docker compose down --rmi all 2>/dev/null || true
 
-# Clean up dangling images
-log_info "🧹 Cleaning up dangling images..."
+# Additional cleanup for any remaining images
+docker rmi deployment-rewriter-agent 2>/dev/null || true
+docker rmi router-agent-router-agent 2>/dev/null || true
+docker rmi agents-content-finder-content-finder 2>/dev/null || true
+
+# Clean up dangling images and volumes
+log_info "🧹 Cleaning up dangling resources..."
 docker image prune -f
+docker volume prune -f
 
-# Create network if it doesn't exist
-log_info "🌐 Creating content-agents network..."
-docker network create content-agents 2>/dev/null || echo "Network content-agents already exists"
-
-# Build and start rewriter-agent first (dependency)
-log_blue "🔨 Building rewriter-agent..."
-cd services/rewriter-agent/deployment
+# Build all services
+log_blue "🔨 Building all services..."
 docker compose build --no-cache
-log_info "✅ Rewriter-agent built successfully"
 
-log_info "🚀 Starting rewriter-agent..."
+# Start all services
+log_info "🚀 Starting all services..."
 docker compose up -d
-log_info "✅ Rewriter-agent started"
 
-# Wait for rewriter to be ready
-log_info "⏳ Waiting for rewriter-agent to be ready..."
-sleep 20
+# Wait for services to be ready
+log_info "⏳ Waiting for services to be ready..."
+sleep 30
 
-# Check rewriter health
-log_info "🏥 Checking rewriter-agent health..."
-max_attempts=12
-attempt=1
-while [ $attempt -le $max_attempts ]; do
-    if curl -f http://localhost:8082/health &> /dev/null; then
-        log_info "✅ Rewriter-agent is healthy"
-        break
-    else
-        log_warn "⚠️ Rewriter-agent not ready, attempt $attempt/$max_attempts..."
-        sleep 5
-        ((attempt++))
-    fi
-done
+# Function to check service health
+check_service_health() {
+    local service_name=$1
+    local port=$2
+    local max_attempts=12
+    local attempt=1
 
-if [ $attempt -gt $max_attempts ]; then
-    log_error "❌ Rewriter-agent failed to start properly"
-    exit 1
-fi
+    log_info "🏥 Checking $service_name health..."
 
-# Build and start router-agent
-log_blue "🔨 Building router-agent..."
-cd ../../router-agent
-docker compose build --no-cache
-log_info "✅ Router-agent built successfully"
+    while [ $attempt -le $max_attempts ]; do
+        if curl -f http://localhost:$port/health &> /dev/null; then
+            log_info "✅ $service_name is healthy"
+            return 0
+        else
+            log_warn "⚠️ $service_name not ready, attempt $attempt/$max_attempts..."
+            sleep 5
+            ((attempt++))
+        fi
+    done
 
-log_info "🚀 Starting router-agent..."
-docker compose up -d
-log_info "✅ Router-agent started"
+    log_error "❌ $service_name failed to start properly"
+    return 1
+}
 
-# Wait for router to be ready
-log_info "⏳ Waiting for router-agent to be ready..."
-sleep 15
-
-# Check router health
-log_info "🏥 Checking router-agent health..."
-attempt=1
-while [ $attempt -le $max_attempts ]; do
-    if curl -f http://localhost:8080/health &> /dev/null; then
-        log_info "✅ Router-agent is healthy"
-        break
-    else
-        log_warn "⚠️ Router-agent not ready, attempt $attempt/$max_attempts..."
-        sleep 5
-        ((attempt++))
-    fi
-done
-
-if [ $attempt -gt $max_attempts ]; then
-    log_error "❌ Router-agent failed to start properly"
-    exit 1
-fi
-
-# Build and start content-finder
-log_blue "🔨 Building content-finder..."
-cd ../agents-content-finder
-docker compose build --no-cache
-log_info "✅ Content-finder built successfully"
-
-log_info "🚀 Starting content-finder..."
-docker compose up -d
-log_info "✅ Content-finder started"
-
-# Wait for content-finder to be ready
-log_info "⏳ Waiting for content-finder to be ready..."
-sleep 15
-
-# Check content-finder health
-log_info "🏥 Checking content-finder health..."
-attempt=1
-while [ $attempt -le $max_attempts ]; do
-    if curl -f http://localhost:8000/health &> /dev/null; then
-        log_info "✅ Content-finder is healthy"
-        break
-    else
-        log_warn "⚠️ Content-finder not ready, attempt $attempt/$max_attempts..."
-        sleep 5
-        ((attempt++))
-    fi
-done
-
-if [ $attempt -gt $max_attempts ]; then
-    log_error "❌ Content-finder failed to start properly"
-    exit 1
-fi
-
-# Final health check for all services
-log_info "🏥 Final health check for all services..."
-echo ""
-
+# Check health of all services
 services_status=()
+all_healthy=true
 
-# Check content-finder
-if curl -f http://localhost:8000/health &> /dev/null; then
-    log_info "✅ Content-finder (port 8000): HEALTHY"
-    services_status+=("content-finder:OK")
-else
-    log_error "❌ Content-finder (port 8000): UNHEALTHY"
-    services_status+=("content-finder:FAIL")
-fi
-
-# Check router-agent
-if curl -f http://localhost:8080/health &> /dev/null; then
-    log_info "✅ Router-agent (port 8080): HEALTHY"
-    services_status+=("router-agent:OK")
-else
-    log_error "❌ Router-agent (port 8080): UNHEALTHY"
-    services_status+=("router-agent:FAIL")
-fi
-
-# Check rewriter-agent
-if curl -f http://localhost:8082/health &> /dev/null; then
-    log_info "✅ Rewriter-agent (port 8082): HEALTHY"
+# Check rewriter-agent (foundation service)
+if check_service_health "rewriter-agent" "8082"; then
     services_status+=("rewriter-agent:OK")
 else
-    log_error "❌ Rewriter-agent (port 8082): UNHEALTHY"
     services_status+=("rewriter-agent:FAIL")
+    all_healthy=false
 fi
 
+# Check router-agent (middle service)
+if check_service_health "router-agent" "8080"; then
+    services_status+=("router-agent:OK")
+else
+    services_status+=("router-agent:FAIL")
+    all_healthy=false
+fi
+
+# Check content-finder (top service)
+if check_service_health "content-finder" "8000"; then
+    services_status+=("content-finder:OK")
+else
+    services_status+=("content-finder:FAIL")
+    all_healthy=false
+fi
+
+# Show results
 echo ""
 log_info "📋 Container status:"
-docker ps --format "table {{.Names}}\t{{.Status}}\t{{.Ports}}" | grep -E "(content-finder|router-agent|rewriter-agent|NAMES)"
+docker compose ps
 
 echo ""
 log_info "🌐 Service endpoints:"
@@ -227,32 +157,78 @@ echo "  📍 Rewriter-agent: http://localhost:8082"
 echo "  📍 Rewriter-agent health: http://localhost:8082/health"
 
 echo ""
-log_info "🔗 Workflow chain:"
-echo "  Content-finder → Router-agent → Rewriter-agent"
-echo "      (8000)    →     (8080)    →     (8082)"
+log_info "🔗 Service communication (internal Docker network):"
+echo "  content-finder → http://router-agent:8080"
+echo "  router-agent → http://rewriter-agent:8082"
 
-# Check if all services are healthy
-all_healthy=true
+echo ""
+log_info "🌐 Network information:"
+docker network ls | grep content-agents || log_warn "content-agents network not found"
+
+# Show service status summary
+echo ""
+log_info "📊 Service status summary:"
 for status in "${services_status[@]}"; do
-    if [[ $status == *":FAIL" ]]; then
-        all_healthy=false
-        break
+    IFS=':' read -r service result <<< "$status"
+    if [[ $result == "OK" ]]; then
+        log_info "  ✅ $service: HEALTHY"
+    else
+        log_error "  ❌ $service: UNHEALTHY"
     fi
 done
 
 echo ""
 if [ "$all_healthy" = true ]; then
     log_info "🎉 All services are healthy and ready!"
-    log_info "💡 You can now test the complete workflow by sending requests to content-finder"
+    echo ""
+    log_info "💡 Test the complete workflow:"
+    echo "  1. Send a request to content-finder: http://localhost:8000"
+    echo "  2. Content-finder will automatically call router-agent"
+    echo "  3. Router-agent will call rewriter-agent as needed"
+    echo ""
+    log_info "🔧 Useful commands:"
+    echo "  View logs: docker-compose logs [service-name]"
+    echo "  Stop all: docker-compose down"
+    echo "  Restart: docker-compose restart [service-name]"
 else
-    log_error "⚠️ Some services are not healthy. Check the logs above."
+    log_error "⚠️ Some services are not healthy. Check the logs."
     echo ""
     log_info "🔍 To check logs:"
-    echo "  docker logs <container-name>"
+    echo "  docker-compose logs content-finder"
+    echo "  docker-compose logs router-agent"
+    echo "  docker-compose logs rewriter-agent"
     echo ""
-    log_info "📋 Available containers:"
-    docker ps --format "table {{.Names}}" | grep -E "(content-finder|router-agent|rewriter-agent)"
+    log_info "🔧 To restart a specific service:"
+    echo "  docker-compose restart [service-name]"
 fi
 
 echo ""
 log_info "🏁 Rebuild complete!"
+
+# Optional: Show environment check
+echo ""
+log_info "🔍 Environment check:"
+if [ -f ".env" ]; then
+    log_info "  ✅ .env file found"
+else
+    log_warn "  ⚠️ .env file not found - make sure environment variables are set"
+fi
+
+# Check if required environment variables are mentioned in docker-compose
+required_vars=("ANTHROPIC_API_KEY" "WORDPRESS_API_URL" "WORDPRESS_USERNAME" "WORDPRESS_PASSWORD")
+missing_vars=()
+
+for var in "${required_vars[@]}"; do
+    if ! grep -q "$var" docker-compose.yaml; then
+        missing_vars+=("$var")
+    fi
+done
+
+if [ ${#missing_vars[@]} -eq 0 ]; then
+    log_info "  ✅ All required environment variables are referenced in docker-compose.yaml"
+else
+    log_warn "  ⚠️ Some environment variables might be missing:"
+    for var in "${missing_vars[@]}"; do
+        echo "    - $var"
+    done
+fi
