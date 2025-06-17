@@ -8,7 +8,7 @@ class ArticleUpdateRequest(BaseModel):
     additional_content: str  # This replaces the YouTube transcript content
 
     class Config:
-        schema_extra = {
+        json_schema_extra = {
             "example": {
                 "article_url": "https://stuffgaming.fr/some-article-slug/",
                 "subject": "Guide complet du jeu XYZ",
@@ -24,7 +24,7 @@ class ArticleUpdateResponse(BaseModel):
     status: str
 
     class Config:
-        schema_extra = {
+        json_schema_extra = {
             "example": {
                 "message": "✅ Article mis à jour avec succès (ID 123)",
                 "updated_html": "<p>Article content...</p>",
@@ -44,7 +44,7 @@ class CSVUploadResponse(BaseModel):
     processed_subject: str
 
     class Config:
-        schema_extra = {
+        json_schema_extra = {
             "example": {
                 "session_id": "csv_final_fantasy_14_abc123",
                 "message": "✅ Article mis à jour avec succès (ID 123)",

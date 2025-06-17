@@ -11,6 +11,7 @@ class WordPressClient:
 
     def get_jwt_token(self, username, password):
         """Get JWT token for WordPress authentication"""
+        # Remove the extra /wp-json from the URL construction
         auth_url = f"{self.base_url}/wp-json/jwt-auth/v1/token"
         payload = {
             "username": username,
