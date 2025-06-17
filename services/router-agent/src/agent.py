@@ -1,6 +1,6 @@
 """
-Simplified Router Agent - agent.py
-Direct WordPress content analysis for routing decisions
+Fixed Router Agent - agent.py
+Simplified to send proper JSON to rewriter agent
 """
 
 import sys
@@ -31,30 +31,38 @@ REWRITER_AGENT_URL = os.getenv("REWRITER_AGENT_URL", "http://localhost:8082")
 COPYWRITER_AGENT_URL = os.getenv("COPYWRITER_AGENT_URL", "http://localhost:8083")
 
 
-def call_rewriter_agent_sync(csv_file_path: str, keyword: str) -> Dict[str, Any]:
-    """Synchronous call to the Rewriter Agent API with CSV file"""
+def call_rewriter_agent_json(article_url: str, keyword: str, additional_content: str) -> Dict[str, Any]:
+    """Call rewriter agent with JSON payload instead of CSV"""
     try:
         logger.info(f"🔄 Calling Rewriter Agent for keyword: {keyword}")
+        logger.info(f"📄 Article URL: {article_url}")
 
-        with open(csv_file_path, 'rb') as f:
-            files = {'file': (os.path.basename(csv_file_path), f, 'text/csv')}
-            response = requests.post(
-                f"{REWRITER_AGENT_URL}/update-blog-article",
-                files=files,
-                timeout=30
-            )
+        payload = {
+            "article_url": article_url,
+            "subject": keyword,
+            "additional_content": additional_content
+        }
+
+        response = requests.post(
+            f"{REWRITER_AGENT_URL}/update-blog-article",
+            json=payload,
+            headers={"Content-Type": "application/json"},
+            timeout=60
+        )
 
         if response.status_code == 200:
             result = response.json()
             logger.info(f"✅ Rewriter Agent called successfully")
             return {
                 "success": True,
-                "session_id": result.get("session_id"),
                 "message": result.get("message"),
+                "post_id": result.get("post_id"),
+                "updated_html": result.get("updated_html", ""),
                 "rewriter_response": result
             }
         else:
             logger.error(f"❌ Rewriter Agent call failed: {response.status_code}")
+            logger.error(f"Response: {response.text}")
             return {
                 "success": False,
                 "error": f"HTTP {response.status_code}: {response.text}",
@@ -70,26 +78,38 @@ def call_rewriter_agent_sync(csv_file_path: str, keyword: str) -> Dict[str, Any]
         }
 
 
-def call_copywriter_agent_sync(csv_file_path: str, keyword: str) -> Dict[str, Any]:
-    """Synchronous call to the Copywriter Agent API with CSV file"""
+def call_copywriter_agent_json(keyword: str, keyword_data: Dict[str, Any], site_info: Dict[str, Any]) -> Dict[str, Any]:
+    """Call copywriter agent with JSON payload"""
     try:
         logger.info(f"🔄 Calling Copywriter Agent for keyword: {keyword}")
 
-        with open(csv_file_path, 'rb') as f:
-            files = {'file': (os.path.basename(csv_file_path), f, 'text/csv')}
-            response = requests.post(
-                f"{COPYWRITER_AGENT_URL}/create/csv",
-                files=files,
-                timeout=30
-            )
+        # Prepare comprehensive payload for copywriter
+        payload = {
+            "keyword": keyword,
+            "site_info": site_info,
+            "serp_data": {
+                "organic_results": keyword_data.get('organic_results', []),
+                "people_also_ask": keyword_data.get('people_also_ask', []),
+                "competition": keyword_data.get('competition', 'UNKNOWN'),
+                "monthly_searches": keyword_data.get('monthly_searches', 0)
+            }
+        }
+
+        response = requests.post(
+            f"{COPYWRITER_AGENT_URL}/create",
+            json=payload,
+            headers={"Content-Type": "application/json"},
+            timeout=60
+        )
 
         if response.status_code == 200:
             result = response.json()
             logger.info(f"✅ Copywriter Agent called successfully")
             return {
                 "success": True,
-                "session_id": result.get("session_id"),
                 "message": result.get("message"),
+                "article_id": result.get("article_id"),
+                "content": result.get("content", ""),
                 "copywriter_response": result
             }
         else:
@@ -109,53 +129,60 @@ def call_copywriter_agent_sync(csv_file_path: str, keyword: str) -> Dict[str, An
         }
 
 
+def build_additional_content(keyword_data: Dict[str, Any]) -> str:
+    """Build additional content from SERP data for rewriter"""
+    content_parts = []
+
+    # Add competitor content
+    organic_results = keyword_data.get('organic_results', [])
+    for i, result in enumerate(organic_results[:3], 1):
+        if result.get('content'):
+            content_parts.append(f"Contenu concurrent {i}: {result['content']}")
+
+    # Add people also ask
+    people_also_ask = keyword_data.get('people_also_ask', [])
+    if people_also_ask:
+        content_parts.append(f"Questions fréquentes: {'; '.join(people_also_ask)}")
+
+    return "\n\n".join(content_parts)
+
+
 def intelligent_routing_node(state: RouterState) -> RouterState:
-    """
-    Simplified routing node using direct WordPress content analysis
-    """
+    """Simplified routing node using direct WordPress content analysis"""
     input_data = state["input_data"]
     keyword = input_data.get_primary_keyword()
-    similar_keywords = [kw.dict() for kw in input_data.get_similar_keywords()]
 
     logger.info(f"🧠 Starting WordPress-based routing for keyword: '{keyword}'")
 
     try:
         # Step 1: Fetch WordPress articles for both sites
-        logger.info(f"📋 Fetching WordPress articles for all sites...")
-
         content_analysis = {}
 
         for website in WEBSITES:
-            logger.info(f"   📊 Analyzing {website.name} ({website.niche})...")
+            logger.info(f"📊 Analyzing {website.name} ({website.niche})...")
 
-            # Fetch WordPress articles
             articles_file = fetch_wordpress_articles.invoke(website.wordpress_api_url)
-
-            # Analyze content directly using the WordPress data
             content_result = analyze_wordpress_content.invoke({
                 "keyword": keyword,
                 "articles_file": articles_file
             })
-
             content_analysis[website.niche] = content_result
 
-            logger.info(f"      {'✅' if content_result['content_found'] else '❌'} "
+            logger.info(f"{'✅' if content_result['content_found'] else '❌'} "
                         f"{website.niche}: {content_result['confidence']:.1%} confidence")
 
-        # Step 2: Make routing decision based on WordPress content analysis
-        logger.info(f"🤖 Making routing decision based on WordPress content...")
-
+        # Step 2: Make routing decision
         routing_decision = make_intelligent_routing_decision.invoke({
             "keyword": keyword,
             "gaming_content": content_analysis.get("gaming", {}),
             "motivation_content": content_analysis.get("motivation", {})
         })
 
-        # Step 3: Select the website based on decision
+        # Step 3: Select the website
         selected_niche = routing_decision["selected_site_niche"]
         selected_site = next(
             (site for site in WEBSITES if site.niche == selected_niche),
-            WEBSITES[0]  # Fallback
+            WEBSITES[0]
         )
 
         # Step 4: Generate internal links
@@ -165,84 +192,62 @@ def intelligent_routing_node(state: RouterState) -> RouterState:
             "niche": selected_site.niche
         })
 
-        # Step 5: Prepare final output
+        # Step 5: Get keyword data
+        keyword_data = {}
+        if keyword in input_data.keywords_data:
+            keyword_obj = input_data.keywords_data[keyword]
+            keyword_data = {
+                'organic_results': [
+                    {
+                        'position': result.position,
+                        'title': result.title,
+                        'url': result.url,
+                        'snippet': result.snippet,
+                        'content': result.content or '',
+                    }
+                    for result in keyword_obj.organic_results
+                ],
+                'people_also_ask': keyword_obj.people_also_ask,
+                'competition': keyword_obj.competition,
+                'monthly_searches': keyword_obj.monthly_searches
+            }
+
+        # Step 6: Call appropriate agent
         routing_target = routing_decision["routing_decision"]
         confidence = routing_decision["confidence"]
         reasoning = routing_decision["combined_reasoning"]
         best_content = routing_decision.get("best_content_match", {})
 
-        logger.info(f"✅ WordPress-based routing complete:")
-        logger.info(f"   🎯 Site: {selected_site.name} ({selected_niche})")
-        logger.info(f"   📝 Decision: {routing_target.upper()}")
-        logger.info(f"   📊 Confidence: {confidence:.1%}")
-
-        # Step 6: Generate CSV and call appropriate agent
-        from csv_utils import (
-            create_copywriter_csv,
-            create_rewriter_csv,
-            get_keyword_data_from_content_finder,
-            validate_rewriter_csv
-        )
-
-        keyword_data = get_keyword_data_from_content_finder(input_data, keyword)
         agent_response = None
-        csv_file = None
 
         if routing_target == "rewriter" and best_content.get('best_match'):
-            # Create rewriter CSV with the found WordPress article
+            # Call rewriter with JSON
             existing_url = best_content['best_match']['url']
-
-            csv_file = create_rewriter_csv(
-                existing_content_url=existing_url,
-                keyword=keyword,
-                keyword_data=keyword_data,
-                site_info={
-                    "name": selected_site.name,
-                    "domain": selected_site.domain,
-                    "niche": selected_site.niche
-                },
-                confidence=confidence
-            )
+            additional_content = build_additional_content(keyword_data)
 
             print(f"\n🔄 CALLING REWRITER AGENT")
             print(f"Keyword: {keyword}")
             print(f"Site: {selected_site.name}")
             print(f"Article to rewrite: {best_content['best_match']['title']}")
             print(f"URL: {existing_url}")
-            print(f"📊 CSV created: {csv_file}")
             print("=" * 50)
 
-            if csv_file and validate_rewriter_csv(csv_file):
-                agent_response = call_rewriter_agent_sync(csv_file, keyword)
-            else:
-                logger.error(f"❌ CSV validation failed for rewriter")
-                agent_response = {
-                    "success": False,
-                    "error": "CSV validation failed"
-                }
+            agent_response = call_rewriter_agent_json(existing_url, keyword, additional_content)
 
         else:
-            # Create copywriter CSV for new content
-            csv_file = create_copywriter_csv(
-                keyword=keyword,
-                keyword_data=keyword_data,
-                site_info={
-                    "name": selected_site.name,
-                    "domain": selected_site.domain,
-                    "niche": selected_site.niche
-                },
-                confidence=confidence
-            )
+            # Call copywriter with JSON
+            site_info = {
+                "name": selected_site.name,
+                "domain": selected_site.domain,
+                "niche": selected_site.niche
+            }
 
             print(f"\n✍️ CALLING COPYWRITER AGENT")
             print(f"Keyword: {keyword}")
             print(f"Site: {selected_site.name}")
-            print(f"Similar keywords: {[k['keyword'] for k in similar_keywords[:3]]}")
-            print(f"📊 CSV created: {csv_file}")
             print("=" * 50)
 
-            if csv_file:
-                agent_response = call_copywriter_agent_sync(csv_file, keyword)
+            agent_response = call_copywriter_agent_json(keyword, keyword_data, site_info)
 
         # Step 7: Create output payload
         output_payload = {
@@ -268,7 +273,6 @@ def intelligent_routing_node(state: RouterState) -> RouterState:
             ),
             "existing_content": best_content,
             "llm_reasoning": reasoning,
-            "csv_file": csv_file,
             "agent_response": agent_response
         }
 
@@ -290,7 +294,6 @@ def intelligent_routing_node(state: RouterState) -> RouterState:
             "output_payload": output_payload,
             "internal_linking_suggestions": internal_links,
             "existing_content": best_content,
-            "csv_file": csv_file,
             "agent_response": agent_response
         }
 
@@ -316,7 +319,6 @@ def intelligent_routing_node(state: RouterState) -> RouterState:
             "output_payload": None,
             "internal_linking_suggestions": [],
             "existing_content": None,
-            "csv_file": None,
             "agent_response": None
         }
 
@@ -373,7 +375,6 @@ async def process_content_finder_output(content_data: ContentFinderOutput) -> Di
                 "reasoning": result["reasoning"],
                 "payload": OutputPayload(**result["output_payload"]),
                 "internal_linking_suggestions": result["internal_linking_suggestions"],
-                "csv_file": result.get("csv_file"),
                 "agent_response": result.get("agent_response"),
                 "is_llm_powered": True,
                 "is_streamlined": True
