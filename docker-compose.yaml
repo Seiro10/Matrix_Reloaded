@@ -16,7 +16,7 @@ services:
       - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY}
       - OPENAI_API_KEY=${OPENAI_API_KEY}
       # Agent communication URLs - use service names
-      - REWRITER_AGENT_URL=http://rewriter-agent:8000
+      - REWRITER_AGENT_URL=http://rewriter-agent:8082
       - COPYWRITER_AGENT_URL=http://copywriter-agent:8083
     volumes:
       - router_agent_data:/app/data
