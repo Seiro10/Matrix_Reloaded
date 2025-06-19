@@ -1,5 +1,3 @@
-version: '3.8'
-
 services:
   # Router Agent
   router-agent:
@@ -17,7 +15,7 @@ services:
       - OPENAI_API_KEY=${OPENAI_API_KEY}
       # Agent communication URLs - use service names
       - REWRITER_AGENT_URL=http://rewriter-agent:8082
-      - COPYWRITER_AGENT_URL=http://copywriter-agent:8083
+      - METADATA_GENERATOR_URL=http://metadata-generator:8084
     volumes:
       - router_agent_data:/app/data
       - router_agent_output:/app/output
@@ -33,6 +31,7 @@ services:
       - content-agents
     depends_on:
       - rewriter-agent
+      - metadata-generator
 
   # NEW Rewriter Agent (FastAPI + LangGraph)
   rewriter-agent:
@@ -57,6 +56,31 @@ services:
     restart: unless-stopped
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:8082/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+    networks:
+      - content-agents
+
+  # NEW Metadata Generator Agent
+  metadata-generator:
+    build:
+      context: ./services/metadata-generator
+      dockerfile: Dockerfile
+    ports:
+      - "8084:8084"
+    environment:
+      - ENVIRONMENT=production
+      - PORT=8084
+      - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY}
+      - COPYWRITER_AGENT_URL=http://copywriter-agent:8083
+    volumes:
+      - metadata_generator_logs:/app/logs
+      - metadata_generator_temp:/app/temp
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8084/health"]
       interval: 30s
       timeout: 10s
       retries: 3
@@ -111,6 +135,10 @@ volumes:
   content_finder_data:
     driver: local
   content_finder_logs:
+    driver: local
+  metadata_generator_logs:
+    driver: local
+  metadata_generator_temp:
     driver: local
 
 networks:
