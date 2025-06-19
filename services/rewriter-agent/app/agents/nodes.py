@@ -1,6 +1,6 @@
 import os
 from langchain_anthropic import ChatAnthropic
-from bs4 import BeautifulSoup
+from bs4 import BeautifulSoup, Tag
 from typing import Dict, Any
 
 from app.agents.state import ArticleRewriterState
@@ -130,7 +130,9 @@ def update_blocks_node(state: ArticleRewriterState) -> ArticleRewriterState:
     try:
         updated_blocks = []
 
-        for block in state["html_blocks"]:
+        for i, block in enumerate(state["html_blocks"]):
+            print(
+                f"[DEBUG] Traitement du bloc {i + 1}/{len(state['html_blocks'])}: {block['title'].get_text() if block['title'] else 'Sans titre'}")
             updated_block = update_block_if_needed(
                 block,
                 state["subject"],
@@ -217,19 +219,31 @@ def merge_final_article_node(state: ArticleRewriterState) -> ArticleRewriterStat
     print("[NODE] Merging final article")
 
     try:
+        # First apply strip_duplicate_title_and_featured_image like Django does
+        processor = HTMLProcessor()
+        cleaned_reconstructed = processor.strip_duplicate_title_and_featured_image(state["reconstructed_html"])
+
         final_html = merge_final_article(
             state["subject"],
-            state["reconstructed_html"],
+            cleaned_reconstructed,
             state["generated_sections"]
         )
 
-        # Clean the HTML
-        processor = HTMLProcessor()
-        final_html = processor.clean_all_content(final_html)
+        # Apply media cleaning pipeline like Django views2.py
+        print("[DEBUG] ▶️ Applying media cleaning pipeline")
+        soup_final = BeautifulSoup(final_html, "html.parser")
+        soup_final = processor.clean_all_images(soup_final)
+        soup_final = processor.simplify_youtube_embeds(soup_final)
+        soup_final = processor.restore_youtube_iframes_from_rll_div(soup_final)
+        final_html = str(soup_final)
 
         state["final_html"] = final_html
         state["status"] = "content_ready"
         print("[NODE] ✅ Final article merged and cleaned")
+
+        # Debug output
+        print(f"[DEBUG] Final HTML length: {len(final_html)} characters")
+        print(f"[DEBUG] Final HTML preview: {final_html[:200]}...")
 
     except Exception as e:
         state["error"] = f"Failed to merge final article: {str(e)}"
@@ -274,26 +288,34 @@ def publish_to_wordpress_node(state: ArticleRewriterState) -> ArticleRewriterSta
     return state
 
 
-# GPT Helper Functions (adapted from your original code)
+# Initialize Claude model
+llm = ChatAnthropic(
+    model="claude-3-5-sonnet-20241022",
+    api_key=settings.anthropic_api_key,
+    temperature=0.4,
+    max_tokens=1800
+)
+
 
 def update_block_if_needed(block, subject, additional_content):
-    """Update a single block if needed using GPT"""
+    """Update a single block if needed using ChatAnthropic"""
     title = block['title']
     content_html = "\n".join([str(e) for e in block['content']])
     title_text = title.get_text() if title else "Sans titre"
 
-    prompt = [
-        {
-            "role": "system",
-            "content": """
-### ROLE
-You're a French world-class copywriter specializing in video games. Your job is to update and improve article sections based on additional content provided.
+    prompt = f"""### ROLE
+You're a French world-class copywriter specializing in video games. Your job is to update and improve article sections based on additional information provided.
 
 ### GOAL
 - Identify if a section is:
-  - VALID (still accurate and aligned with the additional content)
-  - TO BE UPDATED (partially outdated or missing context)
-  - OUTDATED (no longer valid and must be rewritten)
+  - VALID (still accurate and complete with the additional information)
+  - TO BE UPDATED (can be improved with the additional context)
+  - OUTDATED (needs significant rewriting based on new information)
+
+### VERIFICATION STRATEGY
+- Compare the section content to the additional information provided.
+- Look for opportunities to enrich the content with competitor insights or missing details.
+- If the section can be improved with more context or better information, update it.
 
 ### INSTRUCTIONS
 - If VALID → respond `STATUS: VALID` and explain briefly why.
@@ -304,35 +326,23 @@ You're a French world-class copywriter specializing in video games. Your job is 
 
 ### TECHNICAL LIMITATIONS
 - Never use long dashes (—). Replace them with a comma, semicolon or period.
-- Never exceed three lines per paragraph.
-"""
-        },
-        {
-            "role": "user",
-            "content": f"""
+- Never exceed three lines per paragraph. Cut long ideas into several shorter blocks.
+
 Sujet : {subject}
 Titre : {title_text}
 
-Contenu HTML :
+Contenu HTML actuel :
 {content_html}
 
-Contenu additionnel à intégrer :
+Informations additionnelles à intégrer :
 {additional_content}
 
-Évalue cette section et mets-la à jour si besoin.
-"""
-        }
-    ]
+Évalue cette section et mets-la à jour si besoin."""
 
     try:
-        client = anthropic.Anthropic(api_key=settings.anthropic_api_key)
-        response = client.messages.create(
-            model="claude-3-5-sonnet-20241022",
-            messages=prompt,
-            temperature=0.4,
-            max_tokens=1800
-        )
-        result = response.content[0].text.strip()
+        response = llm.invoke(prompt)
+        result = response.content.strip()
+        print(f"[GPT] Bloc '{title_text}' ➤ {result[:80]}...")
 
         if result.startswith("STATUS: VALID"):
             return block
@@ -348,175 +358,161 @@ Contenu additionnel à intégrer :
             return block
 
     except Exception as e:
-        print(f"[ERROR] GPT block update failed: {e}")
+        print(f"[ERROR] ChatAnthropic block update failed: {e}")
         return block
 
 
 def diagnose_missing_sections(subject, original_html, additional_content):
-    """Diagnose missing sections using GPT"""
-    prompt = [
-        {
-            "role": "system",
-            "content": """
-### ROLE
-Tu es un éditeur de contenu. Analyse un article et du contenu additionnel pour identifier les sujets pertinents qui ne sont pas encore couverts.
+    """Diagnose missing sections using ChatAnthropic"""
+    prompt = f"""### ROLE
+Tu es un éditeur de contenu. Ton rôle est d'analyser un article déjà rédigé et des informations additionnelles afin d'identifier les sujets pertinents qui ne sont pas encore couverts.
 
 ### GOAL
 Génère entre 1 et 3 nouvelles sections pertinentes à ajouter à l'article. Chaque section doit avoir :
 - Un titre sous forme de balise <h2>
-- Une courte description en une phrase (maximum 25 mots)
+- Une courte description en une phrase (maximum 25 mots) résumant le contenu attendu
 
 ### GUIDELINES
-- Ne suggère pas de doublons
-- Priorise les apports d'expérience non couverts
-- Reste simple et informatif
+- Ne suggère pas de doublons : les thèmes déjà traités dans l'article ne doivent pas être répétés.
+- Priorise les informations nouvelles ou complémentaires qui enrichiraient l'article.
+- Reste simple et informatif : ne génère pas de contenu ou de paragraphe.
 
 ### TECHNICAL LIMITATIONS
-- Utilise uniquement : <h2>, <p>
-- N'utilise jamais de tirets longs (—)
-- Ne dépasse jamais trois lignes par paragraphe
-"""
-        },
-        {
-            "role": "user",
-            "content": f"""
+- Utilise uniquement les balises HTML suivantes : <h2>, <p>
+- Ne génère rien d'autre (pas d'explication ou de commentaire)
+- N'utilise jamais de tirets longs (—). Remplace-les par une virgule, un point-virgule ou un point selon le contexte.
+- Ne dépasse jamais trois lignes par paragraphe. Coupe les idées longues en plusieurs blocs plus courts.
+
 Sujet : {subject}
 
 Article HTML :
 {original_html}
 
-Contenu additionnel :
-{additional_content}
-"""
-        }
-    ]
+Informations additionnelles :
+{additional_content}"""
 
     try:
-        # CHANGE from openai to anthropic:
-        client = anthropic.Anthropic(api_key=settings.anthropic_api_key)
-        response = client.messages.create(
-            model="claude-3-5-sonnet-20241022",
-            messages=prompt,
-            max_tokens=1000
-        )
-        return response.content[0].text.strip()
+        response = llm.invoke(prompt)
+        return response.content.strip()
     except Exception as e:
-        print(f"[ERROR] GPT diagnostic failed: {e}")
+        print(f"[ERROR] ChatAnthropic diagnostic failed: {e}")
         return ""
 
 
 def generate_sections(subject, diagnostic, additional_content):
-    """Generate new sections using GPT"""
-    prompt = [
-        {
-            "role": "system",
-            "content": """
-### ROLE
-Tu es un joueur passionné qui partage ses avis et expériences sur les jeux vidéo.
+    """Generate new sections using ChatAnthropic"""
+    prompt = f"""### ROLE
+Tu es un expert en contenu gaming qui enrichit les articles avec des informations pratiques et utiles.
 
 ### GOAL
-Écrire des paragraphes immersifs et personnels en français (100 mots minimum).
+Écrire des sections informatives et détaillées en français (100 mots minimum), basées sur les informations additionnelles fournies.
 
 ### GUIDELINES
-- Utilise la première personne
-- Adopte un ton naturel, humain
-- Reste fluide : phrases simples
+- Utilise un ton informatif mais accessible.
+- Intègre les informations pratiques et utiles des sources fournies.
+- Reste factuel et précis dans tes explications.
+- Structure le contenu de manière claire et logique.
+
+### STYLE
+- Informatif > promotionnel
+- Pratique et utile pour le lecteur
+- Évite les références aux marques ou sources
+- Ton professionnel mais accessible
 
 ### TECHNICAL LIMITATIONS
 - HTML only: <h2>, <h3>, <p>, <ul>, <li>, <strong>, <em>, <blockquote>
-- N'utilise jamais de tirets longs (—)
-- Ne dépasse jamais trois lignes par paragraphe
-"""
-        },
-        {
-            "role": "user",
-            "content": f"""
+- Une seule section par titre
+- N'utilise jamais de tirets longs (—). Remplace-les par une virgule, un point-virgule ou un point selon le contexte.
+- Ne dépasse jamais trois lignes par paragraphe. Coupe les idées longues en plusieurs blocs plus courts.
+
 Sujet : {subject}
 
 Sections à créer :
 {diagnostic}
 
-Contenu additionnel :
-{additional_content}
-"""
-        }
-    ]
+Informations additionnelles disponibles :
+{additional_content}"""
 
     try:
-        # CHANGE from openai to anthropic:
-        client = anthropic.Anthropic(api_key=settings.anthropic_api_key)
-        response = client.messages.create(
+        # Use higher temperature and other parameters like views2.py
+        section_llm = ChatAnthropic(
             model="claude-3-5-sonnet-20241022",
-            messages=prompt,
-            max_tokens=3000,
+            api_key=settings.anthropic_api_key,
             temperature=1,
-            # Note: Anthropic doesn't have top_p, frequency_penalty, presence_penalty
+            max_tokens=3000
         )
-        return response.content[0].text.strip()
+        response = section_llm.invoke(prompt)
+        return response.content.strip()
     except Exception as e:
-        print(f"[ERROR] GPT section generation failed: {e}")
+        print(f"[ERROR] ChatAnthropic section generation failed: {e}")
         return ""
 
 
 def merge_final_article(subject, reconstructed_html, generated_sections):
-    """Merge everything into final article using GPT"""
-    prompt = [
-        {
-            "role": "system",
-            "content": """
-### ROLE
+    """Merge everything into final article using ChatAnthropic - EXACT logic from views2.py"""
+    prompt = f"""### ROLE
 You are a senior French web editor specialized in video game journalism.
 
 ### GOAL
-Merge new information into an existing article without duplicating ideas.
-Analyze the original structure and enrich it with new content by injecting generated paragraphs directly into existing sections when relevant.
+Your job is to **merge new information into an existing article** (already revised) without duplicating ideas.  
+You must analyze the original structure and enrich it with **new content**, especially by **injecting generated paragraphs directly into existing sections** when relevant.
 
 ### GUIDELINES
-- Use the updated article as the foundation
-- Integrate new content as extra paragraphs inside existing sections when relevant
-- Do not repeat or rephrase what is already covered
-- Respect logical flow, tone, and style
-- Update references to years (e.g., 2024 to 2025) if content is meant to be current
+- Use the updated article as the foundation.
+- Carefully read the generated sections. If a generated section fits an existing section's topic, **integrate the new content as extra paragraphs inside that section.**
+- Do not repeat or rephrase what is already covered.
+- Respect logical flow, tone, and style of the original article.
+- You may slightly rewrite paragraphs if it helps integrate the new information more smoothly.
+- Update all references to years (e.g., 2024) to reflect the current year (2025) if the content is meant to be up to date.
 
 ### STYLE RULES
-- Write in fluent, direct French
-- Avoid fluff, clichés, and redundant transitions
-- Short paragraphs (3 lines max), without long dashes
-- Never exceed three lines per paragraph
+- Write in fluent, direct **French**.
+- Avoid fluff, clichés, and redundant transitions.
+- Never use names, brands, or YouTube references.
+- Short paragraphs (3 lines max.), without long dashes.
+- Never exceed three lines per paragraph. Cut long ideas into several shorter blocks.
 
 ### TECHNICAL LIMITATIONS
-- Use only: <h2>, <h3>, <p>, <ul>, <li>, <strong>, <em>, <blockquote>, <img>, <a>
-- Do NOT use <html>, <body>, <head>, <style> or inline styles
-- Return only clean, merged HTML
+- Use only the following HTML tags: <h2>, <h3>, <p>, <ul>, <li>, <strong>, <em>, <blockquote>, <img>, <a>
+- Do NOT use <html>, <body>, <head>, <style> or inline styles.
+- Do not return any explanation or comment.
+- Do not add meta-commentary like "[Continue...]" or "[Le reste du contenu...]"
+- Return ONLY the complete merged HTML content, nothing else.
 
 ### OUTPUT
-Return only clean, merged HTML. No headers, no extra output, without long dashes.
-"""
-        },
-        {
-            "role": "user",
-            "content": f"""
+Return only clean, merged HTML. No headers, no extra output, no commentary, without long dashes.
+
 Sujet : {subject}
 
 Article révisé :
 {reconstructed_html}
 
 Nouvelles sections générées à intégrer :
-{generated_sections}
-"""
-        }
-    ]
+{generated_sections}"""
 
     try:
-        # CHANGE from openai to anthropic:
-        client = anthropic.Anthropic(api_key=settings.anthropic_api_key)
-        response = client.messages.create(
+        # Use specific parameters like views2.py
+        merge_llm = ChatAnthropic(
             model="claude-3-5-sonnet-20241022",
-            messages=prompt,
-            max_tokens=8000,
-            temperature=0.5
+            api_key=settings.anthropic_api_key,
+            temperature=0.5,
+            max_tokens=8000
         )
-        return response.content[0].text.strip()
+        response = merge_llm.invoke(prompt)
+        result = response.content.strip()
+
+        # Remove any meta-commentary that might have been added
+        if "[" in result and "]" in result:
+            import re
+            # Remove lines with meta-commentary
+            lines = result.split('\n')
+            cleaned_lines = []
+            for line in lines:
+                if not re.search(r'\[.*\]', line.strip()):
+                    cleaned_lines.append(line)
+            result = '\n'.join(cleaned_lines)
+
+        return result
     except Exception as e:
-        print(f"[ERROR] GPT merge failed: {e}")
+        print(f"[ERROR] ChatAnthropic merge failed: {e}")
         return reconstructed_html + "\n\n" + generated_sections
