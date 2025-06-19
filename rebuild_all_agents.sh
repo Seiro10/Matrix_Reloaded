@@ -42,6 +42,7 @@ SERVICES=(
     "content-finder:8000"
     "router-agent:8080"
     "rewriter-agent:8082"
+    "metadata-generator:8084"
 )
 
 echo "Services to rebuild:"
@@ -60,9 +61,25 @@ log_info "🧹 Cleaning up any orphaned containers..."
 docker stop deployment-rewriter-agent-1 2>/dev/null || true
 docker stop router-agent-router-agent-1 2>/dev/null || true
 docker stop agents-content-finder-content-finder-1 2>/dev/null || true
+docker stop metadata-generator-metadata-generator-1 2>/dev/null || true
+docker stop matrix_reloaded-metadata-agent-1 2>/dev/null || true
 docker rm deployment-rewriter-agent-1 2>/dev/null || true
 docker rm router-agent-router-agent-1 2>/dev/null || true
 docker rm agents-content-finder-content-finder-1 2>/dev/null || true
+docker rm metadata-generator-metadata-generator-1 2>/dev/null || true
+docker rm matrix_reloaded-metadata-agent-1 2>/dev/null || true
+
+# Additional cleanup for any containers using ports we need
+log_info "🔍 Checking for port conflicts..."
+for port in 8000 8080 8082 8084; do
+  CONTAINER_ID=$(docker ps -q --filter publish=$port)
+  if [ ! -z "$CONTAINER_ID" ]; then
+    log_warn "Found container using port $port: $CONTAINER_ID"
+    log_info "Stopping and removing container..."
+    docker stop $CONTAINER_ID 2>/dev/null || true
+    docker rm $CONTAINER_ID 2>/dev/null || true
+  fi
+done
 
 # Remove all images
 log_info "🗑️ Removing existing images..."
@@ -72,6 +89,7 @@ docker compose down --rmi all 2>/dev/null || true
 docker rmi deployment-rewriter-agent 2>/dev/null || true
 docker rmi router-agent-router-agent 2>/dev/null || true
 docker rmi agents-content-finder-content-finder 2>/dev/null || true
+docker rmi metadata-generator 2>/dev/null || true
 
 # Clean up dangling images and volumes
 log_info "🧹 Cleaning up dangling resources..."
@@ -126,6 +144,14 @@ else
     all_healthy=false
 fi
 
+# Check metadata-generator
+if check_service_health "metadata-generator" "8084"; then
+    services_status+=("metadata-generator:OK")
+else
+    services_status+=("metadata-generator:FAIL")
+    all_healthy=false
+fi
+
 # Check router-agent (middle service)
 if check_service_health "router-agent" "8080"; then
     services_status+=("router-agent:OK")
@@ -155,11 +181,14 @@ echo "  📍 Router-agent: http://localhost:8080"
 echo "  📍 Router-agent health: http://localhost:8080/health"
 echo "  📍 Rewriter-agent: http://localhost:8082"
 echo "  📍 Rewriter-agent health: http://localhost:8082/health"
+echo "  📍 Metadata-generator: http://localhost:8084"
+echo "  📍 Metadata-generator health: http://localhost:8084/health"
 
 echo ""
 log_info "🔗 Service communication (internal Docker network):"
 echo "  content-finder → http://router-agent:8080"
-echo "  router-agent → http://rewriter-agent:8082"
+echo "  router-agent → http://metadata-generator:8084"
+echo "  metadata-generator → http://copywriter-agent:8083 (future)"
 
 echo ""
 log_info "🌐 Network information:"
@@ -184,7 +213,8 @@ if [ "$all_healthy" = true ]; then
     log_info "💡 Test the complete workflow:"
     echo "  1. Send a request to content-finder: http://localhost:8000"
     echo "  2. Content-finder will automatically call router-agent"
-    echo "  3. Router-agent will call rewriter-agent as needed"
+    echo "  3. Router-agent will call metadata-generator"
+    echo "  4. Metadata-generator will process and later call copywriter (when implemented)"
     echo ""
     log_info "🔧 Useful commands:"
     echo "  View logs: docker-compose logs [service-name]"
@@ -197,6 +227,7 @@ else
     echo "  docker-compose logs content-finder"
     echo "  docker-compose logs router-agent"
     echo "  docker-compose logs rewriter-agent"
+    echo "  docker-compose logs metadata-generator"
     echo ""
     log_info "🔧 To restart a specific service:"
     echo "  docker-compose restart [service-name]"

@@ -29,44 +29,45 @@ logger = logging.getLogger(__name__)
 # Configuration for agent services
 REWRITER_AGENT_URL = os.getenv("REWRITER_AGENT_URL", "http://localhost:8082")
 COPYWRITER_AGENT_URL = os.getenv("COPYWRITER_AGENT_URL", "http://localhost:8083")
+METADATA_GENERATOR_URL = os.getenv("METADATA_GENERATOR_URL", "http://localhost:8084")
 
 
-def call_rewriter_agent_sync(csv_file_path: str, keyword: str) -> Dict[str, Any]:
-    """Synchronous call to the Rewriter Agent API with CSV file"""
+def call_metadata_generator_sync(csv_file_path: str, keyword: str) -> Dict[str, Any]:
+    """Synchronous call to the Metadata Generator API with CSV file"""
     try:
-        logger.info(f"🔄 Calling Rewriter Agent for keyword: {keyword}")
+        logger.info(f"🔄 Calling Metadata Generator for keyword: {keyword}")
 
         with open(csv_file_path, 'rb') as f:
             files = {'file': (os.path.basename(csv_file_path), f, 'text/csv')}
             response = requests.post(
-                f"{REWRITER_AGENT_URL}/update-blog-article",
+                f"{METADATA_GENERATOR_URL}/generate-metadata",
                 files=files,
                 timeout=30
             )
 
         if response.status_code == 200:
             result = response.json()
-            logger.info(f"✅ Rewriter Agent called successfully")
+            logger.info(f"✅ Metadata Generator called successfully")
             return {
                 "success": True,
                 "session_id": result.get("session_id"),
                 "message": result.get("message"),
-                "rewriter_response": result
+                "metadata_response": result
             }
         else:
-            logger.error(f"❌ Rewriter Agent call failed: {response.status_code}")
+            logger.error(f"❌ Metadata Generator call failed: {response.status_code}")
             return {
                 "success": False,
                 "error": f"HTTP {response.status_code}: {response.text}",
-                "rewriter_response": None
+                "metadata_response": None
             }
 
     except Exception as e:
-        logger.error(f"❌ Error calling Rewriter Agent: {e}")
+        logger.error(f"❌ Error calling Metadata Generator: {e}")
         return {
             "success": False,
             "error": str(e),
-            "rewriter_response": None
+            "metadata_response": None
         }
 
 
@@ -242,7 +243,7 @@ def intelligent_routing_node(state: RouterState) -> RouterState:
             print("=" * 50)
 
             if csv_file:
-                agent_response = call_copywriter_agent_sync(csv_file, keyword)
+                agent_response = call_metadata_generator_sync(csv_file, keyword)
 
         # Step 7: Create output payload
         output_payload = {
