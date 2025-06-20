@@ -42,6 +42,7 @@ SERVICES=(
     "content-finder:8000"
     "router-agent:8080"
     "rewriter-agent:8082"
+    "copywriter-agent:8083"
     "metadata-generator:8084"
 )
 
@@ -61,17 +62,19 @@ log_info "🧹 Cleaning up any orphaned containers..."
 docker stop deployment-rewriter-agent-1 2>/dev/null || true
 docker stop router-agent-router-agent-1 2>/dev/null || true
 docker stop agents-content-finder-content-finder-1 2>/dev/null || true
+docker stop agents-copywriter-copywriter-agent-1 2>/dev/null || true
 docker stop metadata-generator-metadata-generator-1 2>/dev/null || true
 docker stop matrix_reloaded-metadata-agent-1 2>/dev/null || true
 docker rm deployment-rewriter-agent-1 2>/dev/null || true
 docker rm router-agent-router-agent-1 2>/dev/null || true
 docker rm agents-content-finder-content-finder-1 2>/dev/null || true
+docker rm agents-copywriter-copywriter-agent-1 2>/dev/null || true
 docker rm metadata-generator-metadata-generator-1 2>/dev/null || true
 docker rm matrix_reloaded-metadata-agent-1 2>/dev/null || true
 
 # Additional cleanup for any containers using ports we need
 log_info "🔍 Checking for port conflicts..."
-for port in 8000 8080 8082 8084; do
+for port in 8000 8080 8082 8083 8084; do
   CONTAINER_ID=$(docker ps -q --filter publish=$port)
   if [ ! -z "$CONTAINER_ID" ]; then
     log_warn "Found container using port $port: $CONTAINER_ID"
@@ -89,6 +92,7 @@ docker compose down --rmi all 2>/dev/null || true
 docker rmi deployment-rewriter-agent 2>/dev/null || true
 docker rmi router-agent-router-agent 2>/dev/null || true
 docker rmi agents-content-finder-content-finder 2>/dev/null || true
+docker rmi agents-copywriter-copywriter-agent 2>/dev/null || true
 docker rmi metadata-generator 2>/dev/null || true
 
 # Clean up dangling images and volumes
@@ -136,7 +140,15 @@ check_service_health() {
 services_status=()
 all_healthy=true
 
-# Check rewriter-agent (foundation service)
+# Check copywriter-agent (foundation service)
+if check_service_health "copywriter-agent" "8083"; then
+    services_status+=("copywriter-agent:OK")
+else
+    services_status+=("copywriter-agent:FAIL")
+    all_healthy=false
+fi
+
+# Check rewriter-agent
 if check_service_health "rewriter-agent" "8082"; then
     services_status+=("rewriter-agent:OK")
 else
@@ -181,6 +193,8 @@ echo "  📍 Router-agent: http://localhost:8080"
 echo "  📍 Router-agent health: http://localhost:8080/health"
 echo "  📍 Rewriter-agent: http://localhost:8082"
 echo "  📍 Rewriter-agent health: http://localhost:8082/health"
+echo "  📍 Copywriter-agent: http://localhost:8083"
+echo "  📍 Copywriter-agent health: http://localhost:8083/health"
 echo "  📍 Metadata-generator: http://localhost:8084"
 echo "  📍 Metadata-generator health: http://localhost:8084/health"
 
@@ -188,7 +202,7 @@ echo ""
 log_info "🔗 Service communication (internal Docker network):"
 echo "  content-finder → http://router-agent:8080"
 echo "  router-agent → http://metadata-generator:8084"
-echo "  metadata-generator → http://copywriter-agent:8083 (future)"
+echo "  metadata-generator → http://copywriter-agent:8083"
 
 echo ""
 log_info "🌐 Network information:"
@@ -214,7 +228,8 @@ if [ "$all_healthy" = true ]; then
     echo "  1. Send a request to content-finder: http://localhost:8000"
     echo "  2. Content-finder will automatically call router-agent"
     echo "  3. Router-agent will call metadata-generator"
-    echo "  4. Metadata-generator will process and later call copywriter (when implemented)"
+    echo "  4. Metadata-generator will call copywriter-agent"
+    echo "  5. Copywriter-agent will generate and publish the article"
     echo ""
     log_info "🔧 Useful commands:"
     echo "  View logs: docker-compose logs [service-name]"
@@ -227,6 +242,7 @@ else
     echo "  docker-compose logs content-finder"
     echo "  docker-compose logs router-agent"
     echo "  docker-compose logs rewriter-agent"
+    echo "  docker-compose logs copywriter-agent"
     echo "  docker-compose logs metadata-generator"
     echo ""
     log_info "🔧 To restart a specific service:"
@@ -246,7 +262,7 @@ else
 fi
 
 # Check if required environment variables are mentioned in docker-compose
-required_vars=("ANTHROPIC_API_KEY" "WORDPRESS_API_URL" "WORDPRESS_USERNAME" "WORDPRESS_PASSWORD")
+required_vars=("ANTHROPIC_API_KEY" "OPENAI_API_KEY" "TAVILY_API_KEY" "WORDPRESS_API_URL" "WORDPRESS_USERNAME" "WORDPRESS_PASSWORD")
 missing_vars=()
 
 for var in "${required_vars[@]}"; do

@@ -53,6 +53,11 @@ class MetadataResponse(BaseModel):
     message: str
     metadata: Optional[MetadataOutput] = None
     error: Optional[str] = None
+    # Add copywriter response fields
+    copywriter_response: Optional[Dict[str, Any]] = None
+    article_id: Optional[str] = None
+    content: Optional[str] = None
+    status: Optional[str] = None
 
 
 # Initialize FastAPI app
@@ -253,19 +258,97 @@ Based on this data, generate the metadata JSON as instructed.
 
 def forward_to_copywriter(metadata: MetadataOutput, original_csv_path: str) -> Dict[str, Any]:
     """
-    Forward the metadata to the copywriter agent (will be implemented later)
-    For now, just print the data that would be sent
+    Forward the metadata and original CSV data to the copywriter agent
     """
-    logger.info(f"📤 Would send data to copywriter at {COPYWRITER_AGENT_URL}")
-    logger.info(f"Metadata: {metadata.dict()}")
-    logger.info(f"Original CSV path: {original_csv_path}")
+    try:
+        logger.info(f"📤 Sending data to copywriter at {COPYWRITER_AGENT_URL}")
 
-    # Mock response for now
-    return {
-        "success": True,
-        "message": "Would forward to copywriter (not yet implemented)",
-        "copywriter_response": None
-    }
+        # Read and parse the original CSV to get all the data
+        with open(original_csv_path, 'rb') as f:
+            csv_content = f.read()
+
+        original_data = parse_csv_input(csv_content)
+
+        # Prepare payload in CopywriterRequest format that matches your server.py
+        payload = {
+            "metadata": metadata.dict(),
+            "keyword_data": {
+                "keyword": original_data.get("keyword", ""),
+                "competition": original_data.get("competition", ""),
+                "site": original_data.get("site", ""),
+                "language": original_data.get("language", "FR"),
+                "confidence": original_data.get("confidence", 0),
+                "monthly_searches": original_data.get("monthly_searches", 0),
+                "people_also_ask": original_data.get("people_also_ask", []),
+                "forum": original_data.get("forum", []),
+                "competitors": original_data.get("competitors", [])
+            },
+            "session_metadata": {
+                "source": "metadata_generator",
+                "timestamp": datetime.now().isoformat(),
+                "csv_file": original_csv_path
+            }
+        }
+
+        # Send POST request to copywriter agent using the correct endpoint
+        response = requests.post(
+            f"{COPYWRITER_AGENT_URL}/write_article",  # Fixed endpoint name
+            json=payload,
+            headers={"Content-Type": "application/json"},
+            timeout=120  # Longer timeout for content generation
+        )
+
+        if response.status_code == 200:
+            result = response.json()
+            logger.info(f"✅ Successfully forwarded to copywriter")
+            return {
+                "success": True,
+                "message": "Successfully forwarded to copywriter agent",
+                "copywriter_response": result,
+                "article_id": result.get("wordpress_post_id"),  # Changed from article_id to wordpress_post_id
+                "content": result.get("content", ""),
+                "status": result.get("status", "success")  # Use status from copywriter response
+            }
+        else:
+            logger.error(f"❌ Copywriter agent returned error: {response.status_code}")
+            logger.error(f"Response text: {response.text}")
+            return {
+                "success": False,
+                "message": f"Copywriter agent error: HTTP {response.status_code}",
+                "copywriter_response": None,
+                "error": response.text,
+                "status": "failed"
+            }
+
+    except requests.exceptions.Timeout:
+        logger.error(f"❌ Timeout calling copywriter agent")
+        return {
+            "success": False,
+            "message": "Timeout calling copywriter agent",
+            "copywriter_response": None,
+            "error": "Request timeout",
+            "status": "timeout"
+        }
+
+    except requests.exceptions.ConnectionError:
+        logger.error(f"❌ Connection error calling copywriter agent")
+        return {
+            "success": False,
+            "message": "Could not connect to copywriter agent",
+            "copywriter_response": None,
+            "error": "Connection error",
+            "status": "connection_error"
+        }
+
+    except Exception as e:
+        logger.error(f"❌ Error forwarding to copywriter: {e}")
+        return {
+            "success": False,
+            "message": f"Error forwarding to copywriter: {str(e)}",
+            "copywriter_response": None,
+            "error": str(e),
+            "status": "error"
+        }
 
 
 @app.get("/health")
@@ -285,7 +368,7 @@ async def generate_metadata_endpoint(
         llm: ChatAnthropic = Depends(get_llm)
 ):
     """
-    Generate metadata from uploaded CSV file
+    Generate metadata from uploaded CSV file and forward to copywriter
     """
     session_id = f"metadata_{str(uuid.uuid4())[:8]}"
 
@@ -300,33 +383,53 @@ async def generate_metadata_endpoint(
 
         # Parse CSV
         input_data = parse_csv_input(content)
-        logger.info(f"Processing metadata for keyword: {input_data.get('keyword')}")
+        keyword = input_data.get('keyword', 'unknown')
+        logger.info(f"🔄 Processing metadata for keyword: {keyword}")
 
         # Generate metadata
         metadata = generate_metadata(input_data, llm)
+        logger.info(f"✅ Generated metadata for: {keyword}")
 
-        # Forward to copywriter (mock for now)
+        # Forward to copywriter
+        logger.info(f"📤 Forwarding to copywriter for: {keyword}")
         copywriter_response = forward_to_copywriter(metadata, file_path)
 
-        return MetadataResponse(
-            success=True,
-            session_id=session_id,
-            message=f"Metadata generated successfully for keyword: {input_data.get('keyword')}",
-            metadata=metadata
-        )
+        # Prepare response based on copywriter success
+        if copywriter_response.get("success"):
+            return MetadataResponse(
+                success=True,
+                session_id=session_id,
+                message=f"Metadata generated and article created successfully for keyword: {keyword}",
+                metadata=metadata,
+                copywriter_response=copywriter_response.get("copywriter_response"),
+                article_id=copywriter_response.get("article_id"),
+                content=copywriter_response.get("content"),
+                status=copywriter_response.get("status", "completed")
+            )
+        else:
+            # Metadata generation succeeded but copywriter failed
+            return MetadataResponse(
+                success=False,  # Overall process failed
+                session_id=session_id,
+                message=f"Metadata generated but copywriter failed for keyword: {keyword}",
+                metadata=metadata,
+                error=copywriter_response.get("error", "Copywriter agent error"),
+                copywriter_response=copywriter_response.get("copywriter_response"),
+                status=copywriter_response.get("status", "failed")
+            )
 
     except Exception as e:
-        logger.error(f"Error processing request: {e}")
+        logger.error(f"❌ Error processing request: {e}")
         return JSONResponse(
             status_code=500,
             content={
                 "success": False,
                 "session_id": session_id,
                 "message": "Error generating metadata",
-                "error": str(e)
+                "error": str(e),
+                "status": "error"
             }
         )
-
 
 if __name__ == "__main__":
     import uvicorn

@@ -1,4 +1,3 @@
-from langchain_community.document_loaders import WikipediaLoader
 from langchain_community.tools import TavilySearchResults
 from langchain_core.messages import get_buffer_string
 from pydantic import BaseModel, Field
@@ -6,8 +5,6 @@ from langchain_core.messages import SystemMessage
 from interview.interview import InterviewSession
 from langchain_openai import ChatOpenAI
 from research.search import SearchTask
-
-
 
 llm = ChatOpenAI(model="gpt-4o-mini")
 
@@ -34,27 +31,6 @@ def search_web(state: InterviewSession):
         [
             f'<Document/>\n{doc}\n</Document>' if isinstance(doc, str)
             else f'<Document href="{doc.get("url", "")}"/>\n{doc.get("content", str(doc))}\n</Document>'
-            for doc in results
-        ]
-    )
-
-    return {"sources": [formatted_docs]}
-
-
-
-def search_wikipedia(state: InterviewSession):
-    """Uses Wikipedia to find documents that help answer the journalist's question."""
-
-    structured_llm = llm.with_structured_output(SearchTask)
-    search_query = structured_llm.invoke([search_prompt] + state["messages"])
-
-    # Run Wikipedia search using the query
-    results = WikipediaLoader(query=search_query.search_text, load_max_docs=5).load()
-
-    # Format results into <Document> blocks with source and page
-    formatted_docs = "\n\n---\n\n".join(
-        [
-            f'<Document source="{doc.metadata["source"]}" page="{doc.metadata.get("page", "")}"/>\n{doc.page_content}\n</Document>'
             for doc in results
         ]
     )

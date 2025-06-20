@@ -3,8 +3,15 @@ from pydantic_settings import BaseSettings
 
 
 class Settings(BaseSettings):
-    # Anthropic settings (CHANGED from openai_api_key)
+    # Anthropic settings
     anthropic_api_key: str
+
+    # OpenAI / LangSmith (ajouté)
+    openai_api_key: str
+    langsmith_tracing: bool = False
+    langsmith_endpoint: str = "https://api.smith.langchain.com"
+    langchain_api_key: str
+    langsmith_project: str = "default"
 
     # WordPress settings
     username_wp: str
@@ -19,6 +26,7 @@ class Settings(BaseSettings):
     class Config:
         env_file = ".env"
         case_sensitive = False
+        extra = "forbid"  # 🚫 Rejette les clés inconnues
 
 
 # Global settings instance
