@@ -1,5 +1,5 @@
 from team.journalists_service import journalist_team_graph
-from interview.interview_service import interview_graph
+from interview.interview_service import run_interviews_parallel_threaded  # Use threaded version
 from writing.service import writer_graph
 from writing.writer_nodes import optimize_article
 from interview.interview import InterviewSession
@@ -11,51 +11,50 @@ from uuid import uuid4
 import os
 import json
 import re
+from metadata_model import MetadataInput, CopywriterRequest
 
 
-async def run_full_article_pipeline(row):
-    thread_id = f"article-{row['Title'].replace(' ', '-').lower()}"
+def run_full_article_pipeline(request: CopywriterRequest):  # Remove async
+    """
+    Updated pipeline to work with metadata input from metadata-generator (SYNC VERSION)
+    """
+    metadata = request.metadata
+    thread_id = f"article-{metadata.main_kw.replace(' ', '-').lower()}"
     thread = {"configurable": {"thread_id": thread_id}}
 
-    # Step 1: Journalist team creation
+    # Step 1: Journalist team creation using metadata
     setup = journalist_team_graph.invoke({
-        "topic": row["Topic"],
-        "title": row["Title"],
-        "type": row["Type"],
-        "keywords": row["Keywords"],
-        "team_title": row.get("TeamTitle", []),
-        "audience": row["Audience"],
-        "prompt": row["Prompt"],
-        "number_of_journalists": 3,
+        "topic": metadata.main_kw,
+        "title": f"Les meilleures {metadata.main_kw} en 2025",  # Generate title from main keyword
+        "type": metadata.post_type,
+        "keywords": [metadata.main_kw] + metadata.secondary_kws,
+        "team_title": metadata.headlines[:3],  # Use first 3 headlines as team roles
+        "audience": request.audience,
+        "prompt": f"Write about {metadata.main_kw} following these headlines: {', '.join(metadata.headlines)}",
+        "number_of_journalists": request.number_of_journalists,
         "editor_feedback": "",
         "journalists": []
     }, thread)
 
     final_journalists = setup["journalists"]
-    report_structure = load_prompt_template(row["Type"])
-    all_sections = []
+    report_structure = load_prompt_template(metadata.post_type)
 
-    # Step 2: Interview each journalist
-    for journalist in final_journalists:
-        interview_state = InterviewSession(
-            journalist=journalist,
-            audience=row["Audience"],
-            report_structure=report_structure,
-            messages=[HumanMessage(content="Hello, I’m ready to begin our conversation.")],
-            max_turns=3,
-            sources=[],
-            full_conversation="",
-            report_sections=[]
-        )
-        interview_thread = {"configurable": {"thread_id": f"{thread_id}-interview-{uuid4()}"}}
-        result = interview_graph.invoke(interview_state, interview_thread)
-        all_sections.extend(result.get("report_sections", []))
+    # Step 2: Run interviews in parallel using threading (FIXED!)
+    print(f"[DEBUG] Starting {len(final_journalists)} interviews using THREADING...")
+    all_sections = run_interviews_parallel_threaded(  # Use sync threaded version
+        journalists=final_journalists,
+        topic=metadata.main_kw,
+        audience=request.audience,
+        report_structure=report_structure,
+        max_turns=request.max_turns
+    )
+    print(f"[DEBUG] ✅ Threaded interviews completed! Got {len(all_sections)} sections")
 
     # Step 3: Merge all interviews into one article
     merge_state = {
-        "title": row["Title"],
+        "title": f"Les meilleures {metadata.main_kw} en 2025",
         "sections": all_sections,
-        "audience": row["Audience"],
+        "audience": request.audience,
         "report_structure": report_structure
     }
 

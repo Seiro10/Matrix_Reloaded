@@ -5,78 +5,226 @@ import os
 env_path = os.path.join(os.path.dirname(__file__), '..', '.env')
 load_dotenv(dotenv_path=env_path, override=True)
 
-# 🧪 Debug: show the loaded value
-print("[DEBUG] USERNAME_WP =", os.getenv("USERNAME_WP"))
-
-import os
 import json
 import requests
 import markdown
 from slugify import slugify  # pip install python-slugify
 import ast
 
-# -----------------------------
-# 1. Convert structured JSON to Markdown
-# -----------------------------
-def render_report_to_markdown(data: dict) -> str:
-    md = f"# {data['title']}\n\n"
 
-    # ✏️ Introduction sans titre de section
-    intro = data.get('introduction', {})
-    if intro.get('teaser'):
-        md += f"{intro['teaser']}\n\n"
-    for bullet in intro.get('bullets', []):
-        md += f"- {bullet}\n"
-    if intro.get('hook2'):
-        for hook2 in intro['hook2']:
-            md += f"\n{hook2}\n"
-    md += "\n"
+# -----------------------------
+# 1. Auto-detect structure type and convert to Markdown
+# -----------------------------
+def detect_structure_type(data: dict) -> str:
+    """
+    Detect the type of JSON structure based on available keys
+    """
+    if 'headings_content' in data:
+        return 'headings_content'
+    elif 'comparisons' in data:
+        return 'comparisons'
+    elif 'sections' in data:
+        return 'sections'
+    else:
+        return 'unknown'
+
+
+def render_headings_content_structure(data: dict) -> str:
+    """
+    Render the headings_content structure (new format)
+    """
+    md = ""
+    headings_content = data.get('headings_content', {})
+
+    for key, content in headings_content.items():
+        if key == 'description':
+            continue  # Skip meta description
+
+        if isinstance(content, dict) and content.get('heading') and content.get('paragraph'):
+            md += f"## {content['heading']}\n\n"
+            md += f"{content['paragraph']}\n\n"
+
+    return md
+
+
+def render_comparisons_structure(data: dict) -> str:
+    """
+    Render the comparisons structure (affiliate format)
+    """
+    md = ""
 
     # 🖱️ Comparisons
     for item in data.get('comparisons', []):
-        md += f"### {item['title']}: {item['product']}\n\n"
-        md += f"{item['description']}\n\n"
+        md += f"## {item['title']}: {item.get('product', '')}\n\n"
+
+        if item.get('description'):
+            md += f"{item['description']}\n\n"
+
+        # Handle paragraphs
         for i in range(1, 5):
             para = item.get(f"paragraph{i}")
             if para:
                 md += f"{para}\n\n"
+
+        # Handle pros/cons
         if item.get("pros"):
-            md += "**Pros:**\n" + "".join(f"- ✅ {p}\n" for p in item["pros"]) + "\n"
+            md += "**Avantages:**\n" + "".join(f"- ✅ {p}\n" for p in item["pros"]) + "\n"
         if item.get("cons"):
-            md += "**Cons:**\n" + "".join(f"- ❌ {c}\n" for c in item["cons"]) + "\n"
+            md += "**Inconvénients:**\n" + "".join(f"- ❌ {c}\n" for c in item["cons"]) + "\n"
         md += "\n"
 
     # 📌 Notable Mentions
     if data.get("notable_mentions"):
-        md += "## Notable Mentions\n"
+        md += "## Mentions Spéciales\n\n"
         for mention in data["notable_mentions"]:
-            md += f"**{mention['title']}**: {mention['description']}\n\n"
+            md += f"### {mention['title']}\n\n"
+            md += f"{mention['description']}\n\n"
 
-    # 🔄 Updates
+    return md
+
+
+def render_sections_structure(data: dict) -> str:
+    """
+    Render the sections structure (generic format)
+    """
+    md = ""
+
+    for section in data.get('sections', []):
+        if isinstance(section, dict):
+            if section.get('title'):
+                md += f"## {section['title']}\n\n"
+            if section.get('content'):
+                md += f"{section['content']}\n\n"
+        elif isinstance(section, str):
+            md += f"{section}\n\n"
+
+    return md
+
+
+def render_introduction(data: dict) -> str:
+    """
+    Render introduction section (works for all formats)
+    """
+    md = ""
+    intro = data.get('introduction', {})
+
+    if intro.get('teaser'):
+        md += f"{intro['teaser']}\n\n"
+
+    # Handle different intro formats
+    if intro.get('nlp_answer'):
+        md += f"{intro['nlp_answer']}\n\n"
+
+    if intro.get('extended_answer'):
+        md += f"{intro['extended_answer']}\n\n"
+
+    if intro.get('bullets'):
+        for bullet in intro['bullets']:
+            md += f"- {bullet}\n"
+        md += "\n"
+
+    if intro.get('hook2'):
+        if isinstance(intro['hook2'], list):
+            for hook in intro['hook2']:
+                md += f"{hook}\n\n"
+        else:
+            md += f"{intro['hook2']}\n\n"
+
+    return md
+
+
+def render_conclusion(data: dict) -> str:
+    """
+    Render conclusion section (works for all formats)
+    """
+    md = ""
+
+    if data.get("conclusion"):
+        md += "## Conclusion\n\n"
+        conclusion = data['conclusion']
+
+        if conclusion.get('summary'):
+            md += f"{conclusion['summary']}\n\n"
+
+        if conclusion.get('closing_sentence'):
+            md += f"{conclusion['closing_sentence']}\n\n"
+
+        # Handle recommendations (old format)
+        if conclusion.get('recommendations'):
+            md += "**Nos recommandations:**\n\n"
+            for rec in conclusion['recommendations']:
+                md += f"- {rec}\n"
+            md += "\n"
+
+    return md
+
+
+def render_faq(data: dict) -> str:
+    """
+    Render FAQ section (works for all formats)
+    """
+    md = ""
+
+    if data.get("faq"):
+        md += "## Questions Fréquentes\n\n"
+
+        if data.get("faq_description"):
+            md += f"{data['faq_description']}\n\n"
+
+        for q in data["faq"]:
+            md += f"### {q['question']}\n\n"
+            md += f"{q['answer']}\n\n"
+
+    return md
+
+
+def render_report_to_markdown(data: dict) -> str:
+    """
+    Adaptive markdown renderer that detects structure type automatically
+    """
+    # Start with title
+    md = f"# {data.get('title', 'Article')}\n\n"
+
+    # Detect structure type
+    structure_type = detect_structure_type(data)
+    print(f"[DEBUG] Detected structure type: {structure_type}")
+
+    # Render introduction (common to all)
+    md += render_introduction(data)
+
+    # Render main content based on structure type
+    if structure_type == 'headings_content':
+        print("[DEBUG] Using headings_content renderer")
+        md += render_headings_content_structure(data)
+
+    elif structure_type == 'comparisons':
+        print("[DEBUG] Using comparisons renderer")
+        md += render_comparisons_structure(data)
+
+    elif structure_type == 'sections':
+        print("[DEBUG] Using sections renderer")
+        md += render_sections_structure(data)
+
+    else:
+        print(f"[WARNING] Unknown structure type: {structure_type}, using fallback")
+        # Fallback: try to render any content we can find
+        if 'content' in data:
+            md += f"{data['content']}\n\n"
+
+    # Handle updates (if present)
     if data.get("updates"):
-        md += "## Updates\n"
+        md += "## Mises à jour\n\n"
         for update in data["updates"]:
             md += f"- {update}\n"
         md += "\n"
 
-    # ✅ Conclusion
-    if data.get("conclusion"):
-        md += "## Conclusion\n"
-        md += f"{data['conclusion']['summary']}\n\n"
-        for rec in data['conclusion'].get("recommendations", []):
-            md += f"- {rec}\n"
-        md += "\n"
+    # Render conclusion (common to all)
+    md += render_conclusion(data)
 
-    # ❓ FAQ
-    if data.get("faq"):
-        md += "## FAQ\n"
-        if data.get("faq_description"):
-            md += f"{data['faq_description']}\n\n"
-        for q in data["faq"]:
-            md += f"**Q: {q['question']}**\n\nA: {q['answer']}\n\n"
+    # Render FAQ (common to all)
+    md += render_faq(data)
 
     return md.strip()
-
 
 # -----------------------------
 # 2. Markdown → HTML

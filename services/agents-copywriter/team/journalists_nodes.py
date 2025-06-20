@@ -1,7 +1,6 @@
 from dotenv import load_dotenv
 load_dotenv()
 
-from IPython.display import Image, display
 from langchain_core.messages import AIMessage, HumanMessage, SystemMessage
 from langchain_openai import ChatOpenAI
 from langgraph.checkpoint.memory import MemorySaver

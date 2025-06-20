@@ -1,4 +1,3 @@
-from IPython.display import Image, display
 from langgraph.graph import START, END, StateGraph
 from langgraph.checkpoint.memory import MemorySaver
 from langchain_core.messages import AIMessage, HumanMessage, SystemMessage
@@ -16,6 +15,3 @@ builder.add_conditional_edges("human_feedback", should_continue, ["build_team_of
 # Compile
 memory = MemorySaver()
 journalist_team_graph = builder.compile(interrupt_before=['human_feedback'], checkpointer=memory)
-
-
-
