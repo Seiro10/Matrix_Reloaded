@@ -2,6 +2,7 @@ from typing import List
 from typing_extensions import TypedDict
 from pydantic import BaseModel, Field
 
+
 class Journalist(BaseModel):
     organization: str = Field(
         description="Where the journalist works or is connected to.",
@@ -18,6 +19,11 @@ class Journalist(BaseModel):
     about: str = Field(
         description="What the journalist cares about, what they focus on, or why they're involved.",
     )
+    assigned_headlines: List[str] = Field(
+        default_factory=list,
+        description="Headlines assigned to this journalist to cover."
+    )
+
     @property
     def profile(self) -> str:
         return f"""
@@ -26,7 +32,9 @@ Nickname: {self.nickname}
 Title: {self.job_title}
 Organization: {self.organization}
 About: {self.about}
+Assigned Headlines: {', '.join(self.assigned_headlines)}
         """
+
 
 class TeamOfJournalists(BaseModel):
     journalists: List[Journalist] = Field(
@@ -45,3 +53,4 @@ class JournalistsSetup(TypedDict):
     number_of_journalists: int
     editor_feedback: str
     journalists: List[Journalist]
+    headlines: List[str]  # Added to store headlines from metadata
