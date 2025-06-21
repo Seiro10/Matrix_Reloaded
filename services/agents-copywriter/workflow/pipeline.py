@@ -7,6 +7,7 @@ from langchain_core.messages import HumanMessage
 from utils.wordpress import get_jwt_token, post_article_to_wordpress
 from utils.wordpress import render_report_to_markdown, markdown_to_html
 from utils.prompts import load_prompt_template
+from utils.headline_distribution import distribute_headlines_to_journalists
 from uuid import uuid4
 import os
 import json
@@ -33,10 +34,18 @@ def run_full_article_pipeline(request: CopywriterRequest):  # Remove async
         "prompt": f"Write about {metadata.main_kw} following these headlines: {', '.join(metadata.headlines)}",
         "number_of_journalists": request.number_of_journalists,
         "editor_feedback": "",
-        "journalists": []
+        "journalists": [],
+        "headlines": metadata.headlines  # Add headlines to setup
     }, thread)
 
-    final_journalists = setup["journalists"]
+    journalists_without_headlines = setup["journalists"]
+
+    # Step 1.5: Distribute headlines among journalists
+    final_journalists = distribute_headlines_to_journalists(
+        journalists_without_headlines,
+        metadata.headlines
+    )
+
     report_structure = load_prompt_template(metadata.post_type)
 
     # Step 2: Run interviews in parallel using threading (FIXED!)
@@ -55,7 +64,9 @@ def run_full_article_pipeline(request: CopywriterRequest):  # Remove async
         "title": f"Les meilleures {metadata.main_kw} en 2025",
         "sections": all_sections,
         "audience": request.audience,
-        "report_structure": report_structure
+        "report_structure": report_structure,
+        "headlines": metadata.headlines,  # Pass headlines from metadata
+        "post_type": metadata.post_type  # Pass post_type from metadata
     }
 
     # 💾 Save intermediate state for debugging or replay
@@ -73,7 +84,7 @@ def run_full_article_pipeline(request: CopywriterRequest):  # Remove async
 
     # Step 5: Optimize article
     print("Starting optimization..")
-    optimized_article = optimize_article(article)
+    optimized_article = optimize_article(article, metadata.headlines)  # Pass headlines
     if not optimized_article:
         print("[ERROR] ❌ Optimizer returned nothing.")
         return None
@@ -107,6 +118,10 @@ def run_full_article_pipeline(request: CopywriterRequest):  # Remove async
 
     # Step 8: Convert to markdown and publish
     try:
+        # Add post_type to the parsed article for the renderer
+        if isinstance(parsed_article, dict):
+            parsed_article['post_type'] = metadata.post_type
+
         markdown = render_report_to_markdown(parsed_article)
         html = markdown_to_html(markdown)
         post_id = post_article_to_wordpress(parsed_article, token, html=html)

@@ -49,7 +49,7 @@ interview_graph = interview_graph_builder.compile(
 
 
 # NEW: Threading-based parallel interview function
-def run_single_interview_sync(journalist, index, topic, audience, report_structure, max_turns=3):
+def run_single_interview_sync(journalist, index, topic, audience, report_structure, max_turns=3, metadata=None):
     """
     Synchronous version of single interview for threading
     """
@@ -57,16 +57,18 @@ def run_single_interview_sync(journalist, index, topic, audience, report_structu
         from langchain_core.messages import HumanMessage
 
         print(f"[THREAD-{index}] 🚀 Starting interview with {journalist.full_name}")
+        print(f"[THREAD-{index}] 📋 Assigned headlines: {journalist.assigned_headlines}")
 
         interview_state = InterviewSession(
             journalist=journalist,
             audience=audience,
             report_structure=report_structure,
-            messages=[HumanMessage(content=f"Hello, I'm ready to discuss {topic}.")],
+            messages=[HumanMessage(content=f"Hello, I'm ready to discuss {topic}, specifically focusing on: {', '.join(journalist.assigned_headlines)}")],
             max_turns=max_turns,
             sources=[],
             full_conversation="",
-            report_sections=[]
+            report_sections=[],
+            metadata=metadata or {}
         )
 
         interview_thread = {"configurable": {"thread_id": f"interview-{index}-{uuid4()}"}}
@@ -81,7 +83,7 @@ def run_single_interview_sync(journalist, index, topic, audience, report_structu
         return []
 
 
-def run_interviews_parallel_threaded(journalists, topic, audience, report_structure, max_turns=3):
+def run_interviews_parallel_threaded(journalists, topic, audience, report_structure, max_turns=3, metadata=None):
     """
     Run multiple interviews in parallel using threading (better for EC2 with 2 cores)
     """
@@ -98,7 +100,8 @@ def run_interviews_parallel_threaded(journalists, topic, audience, report_struct
                 topic,
                 audience,
                 report_structure,
-                max_turns
+                max_turns,
+                metadata
             ): (journalist, i)
             for i, journalist in enumerate(journalists)
         }
@@ -121,9 +124,9 @@ def run_interviews_parallel_threaded(journalists, topic, audience, report_struct
 
 
 # Keep the async version as fallback
-async def run_interviews_parallel(journalists, topic, audience, report_structure, max_turns=3):
+async def run_interviews_parallel(journalists, topic, audience, report_structure, max_turns=3, metadata=None):
     """
     Fallback to threaded version for better compatibility
     """
     print("[PARALLEL] 🔄 Using threaded implementation for better performance...")
-    return run_interviews_parallel_threaded(journalists, topic, audience, report_structure, max_turns)
+    return run_interviews_parallel_threaded(journalists, topic, audience, report_structure, max_turns, metadata)
