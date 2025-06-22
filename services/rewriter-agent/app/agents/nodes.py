@@ -152,7 +152,7 @@ def process_html_blocks_node(state: ArticleRewriterState) -> ArticleRewriterStat
 
 
 def update_blocks_node(state: ArticleRewriterState) -> ArticleRewriterState:
-    """Update blocks based on additional content - WITH DEBUG"""
+    """Update blocks based on additional content - FIXED logic from views2.py"""
     print("[NODE] Updating blocks with new content")
 
     try:
@@ -188,6 +188,7 @@ def update_blocks_node(state: ArticleRewriterState) -> ArticleRewriterState:
                 print(f"[DEBUG] ↪ BEFORE update - Media: {', '.join(media_before)}")
                 print(f"[DEBUG] ↪ BEFORE content length: {len(content_str_before)} chars")
 
+            # Apply the EXACT logic from views2.py
             updated_block = update_block_if_needed(
                 block,
                 state["subject"],
@@ -419,7 +420,7 @@ llm = ChatAnthropic(
 
 
 def update_block_if_needed(block, subject, additional_content):
-    """Update a single block if needed - FIXED to preserve complete figure structures"""
+    """Update a single block if needed - EXACT logic from views2.py"""
     raw_title = block.get("title", "")
     try:
         if hasattr(raw_title, "get_text"):
@@ -429,7 +430,7 @@ def update_block_if_needed(block, subject, additional_content):
     except Exception:
         title_text = "Sans titre"
 
-    # DEBUG: Detailed content analysis
+    # Convert content to HTML string for LLM processing
     content_html = "\n".join([str(elem) for elem in block["content"]])
 
     print(f"[DEBUG-GPT] Processing block: {title_text}")
@@ -437,7 +438,7 @@ def update_block_if_needed(block, subject, additional_content):
     print(f"[DEBUG-GPT] ↪ Input block['content'] has {len(block['content'])} elements")
     print(f"[DEBUG-GPT] ↪ Element types: {[type(elem).__name__ for elem in block['content']]}")
 
-    # Check for specific media
+    # Check for specific media BEFORE processing
     figures_count = content_html.count("<figure")
     iframes_count = content_html.count("<iframe")
     images_count = content_html.count("<img") - content_html.count("wp-post-image")
@@ -447,7 +448,7 @@ def update_block_if_needed(block, subject, additional_content):
         print(
             f"[DEBUG-GPT] ↪ Input media: {figures_count} figures, {iframes_count} iframes, {images_count} images, {embeds_count} embeds")
 
-    # FIXED: Enhanced prompt to preserve complete figure structures
+    # Enhanced prompt for media preservation - EXACT from views2.py
     has_media = figures_count > 0 or iframes_count > 0 or images_count > 0 or embeds_count > 0
 
     if has_media:
@@ -500,7 +501,11 @@ Contenu: {content_html}
 
 Contexte additionnel: {additional_content}
 
-Sujet: {subject}"""
+Sujet: {subject}
+
+TECHNICAL LIMITATIONS:
+- N'utilise jamais de tirets longs (—). Remplace-les par une virgule, un point-virgule ou un point selon le contexte.
+- Ne dépasse jamais trois lignes par paragraphe. Coupe les idées longues en plusieurs blocs plus courts."""
 
     try:
         response = llm.invoke(prompt)
@@ -530,7 +535,7 @@ Sujet: {subject}"""
             if html_content and '<' in html_content:
                 soup = BeautifulSoup(html_content, "html.parser")
 
-                # FIXED: Better validation for complete figure structures
+                # CRITICAL: Better validation for complete structures
                 valid_content = []
                 for elem in soup.contents:
                     if isinstance(elem, Tag):
@@ -545,7 +550,7 @@ Sujet: {subject}"""
                                 print(f"[WARNING] ❌ Empty figure detected, skipping: {str(elem)}")
                         else:
                             valid_content.append(elem)
-                    elif hasattr(elem, 'strip') and elem.strip():
+                    elif isinstance(elem, str) and elem.strip():
                         # Handle text nodes by wrapping in p tag
                         p_tag = soup.new_tag('p')
                         p_tag.string = elem.strip()
@@ -556,18 +561,12 @@ Sujet: {subject}"""
                     "content": valid_content
                 }
 
-                # DEBUG: Check output with detailed figure analysis
+                # DEBUG: Check output with detailed analysis
                 output_html = "\n".join([str(elem) for elem in valid_content])
                 output_figures = output_html.count("<figure")
                 output_iframes = output_html.count("<iframe")
                 output_images = output_html.count("<img") - output_html.count("wp-post-image")
                 output_embeds = output_html.count("wp-block-embed")
-
-                # Check for empty figures
-                empty_figures = output_html.count("<figure></figure>") + output_html.count(
-                    "<figure class=") - output_html.count("<img")
-                if "<figure" in output_html and "<img" not in output_html and "<iframe" not in output_html:
-                    print(f"[WARNING] ❌ Potential empty figures detected in output!")
 
                 print(f"[DEBUG-GPT] ↪ Output content length: {len(output_html)} chars")
                 print(f"[DEBUG-GPT] ↪ Output has {len(valid_content)} elements")
@@ -706,7 +705,7 @@ Transcript :
 
 
 def merge_final_article(subject, reconstructed_html, generated_sections):
-    """Merge everything into final article - with fallback and stricter rules"""
+    """Merge everything into final article - EXACT logic from views2.py"""
     prompt = [
         {
             "role": "system",
@@ -766,7 +765,7 @@ Nouvelles sections générées à intégrer :
         response = merge_llm.invoke(prompt)
         result = response.content.strip()
 
-        # Optionnel : suppression des lignes contenant des commentaires LLM
+        # Clean any LLM meta-commentary
         if "[" in result and "]" in result:
             import re
             lines = result.split('\n')

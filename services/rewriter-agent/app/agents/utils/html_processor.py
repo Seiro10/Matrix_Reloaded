@@ -1,4 +1,4 @@
-from bs4 import BeautifulSoup, Tag
+from bs4 import BeautifulSoup, Tag, NavigableString
 
 
 class HTMLProcessor:
@@ -127,7 +127,7 @@ class HTMLProcessor:
         return soup
 
     def clean_all_images(self, soup):
-        """Clean and optimize all images - MODIFIED to preserve content images"""
+        """Clean and optimize all images - EXACT COPY from utils.py with content preservation"""
         restored = 0
         removed_svg = 0
         removed_empty_p = 0
@@ -178,10 +178,10 @@ class HTMLProcessor:
 
         if picture_restored:
             print(f"[DEBUG] 🧩 {picture_restored} <img> restaurés dans <picture> manquants")
-            print(f"[DEBUG] ✅ {restored} images restaurées depuis lazy-src")
-            print(f"[DEBUG] 🗑️ {removed_svg} SVG placeholders supprimés")
-            print(f"[DEBUG] 🧼 {removed_empty_p} <p> vides supprimés")
-            print(f"[DEBUG] ℹ️ Conservation des images de contenu (pas de suppression de doublons)")
+        print(f"[DEBUG] ✅ {restored} images restaurées depuis lazy-src")
+        print(f"[DEBUG] 🗑️ {removed_svg} SVG placeholders supprimés")
+        print(f"[DEBUG] 🧼 {removed_empty_p} <p> vides supprimés")
+        print(f"[DEBUG] ℹ️ Conservation des images de contenu (pas de suppression de doublons)")
 
         return soup
 
