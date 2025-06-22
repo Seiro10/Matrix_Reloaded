@@ -112,7 +112,13 @@ def process_html_blocks_node(state: ArticleRewriterState) -> ArticleRewriterStat
         processor = HTMLProcessor()
         blocks = processor.extract_html_blocks(state["original_html"])
 
+        # Convertir tous les tags BeautifulSoup en string propre
+        for block in blocks:
+            block["title"] = str(block["title"]) if block["title"] else ""
+            block["content"] = [str(e) for e in block["content"]]
+
         state["html_blocks"] = blocks
+
         print(f"[NODE] ✅ Extracted {len(blocks)} HTML blocks")
 
     except Exception as e:
@@ -124,15 +130,23 @@ def process_html_blocks_node(state: ArticleRewriterState) -> ArticleRewriterStat
 
 
 def update_blocks_node(state: ArticleRewriterState) -> ArticleRewriterState:
-    """Update blocks based on additional content"""
+    """Update blocks based on additional content - EXACT logic from views2.py"""
     print("[NODE] Updating blocks with new content")
 
     try:
         updated_blocks = []
 
         for i, block in enumerate(state["html_blocks"]):
-            print(
-                f"[DEBUG] Traitement du bloc {i + 1}/{len(state['html_blocks'])}: {block['title'].get_text() if block['title'] else 'Sans titre'}")
+            block_title = "Sans titre"
+            if block.get("title"):
+                try:
+                    # Tenter d'extraire le texte du titre HTML
+                    soup = BeautifulSoup(block["title"], "html.parser")
+                    block_title = soup.get_text(strip=True) or "Sans titre"
+                except Exception:
+                    block_title = "Sans titre"
+            print(f"[DEBUG] Traitement du bloc {i + 1}/{len(state['html_blocks'])}: {block_title}")
+
             updated_block = update_block_if_needed(
                 block,
                 state["subject"],
@@ -161,6 +175,8 @@ def reconstruct_article_node(state: ArticleRewriterState) -> ArticleRewriterStat
 
         state["reconstructed_html"] = reconstructed
         print("[NODE] ✅ Article reconstructed")
+        print("[DEBUG] ▶️ Preview reconstructed HTML:")
+        print(state["reconstructed_html"][:1000])
 
     except Exception as e:
         state["error"] = f"Failed to reconstruct article: {str(e)}"
@@ -215,7 +231,7 @@ def generate_new_sections_node(state: ArticleRewriterState) -> ArticleRewriterSt
 
 
 def merge_final_article_node(state: ArticleRewriterState) -> ArticleRewriterState:
-    """Merge everything into final article"""
+    """Merge everything into final article - EXACT logic from views2.py"""
     print("[NODE] Merging final article")
 
     try:
@@ -298,63 +314,76 @@ llm = ChatAnthropic(
 
 
 def update_block_if_needed(block, subject, additional_content):
-    """Update a single block if needed using ChatAnthropic"""
-    title = block['title']
-    content_html = "\n".join([str(e) for e in block['content']])
-    title_text = title.get_text() if title else "Sans titre"
+    """Update a single block if needed - EXACT format from views2.py with simpler prompt"""
+    raw_title = block.get("title", "")
+    try:
+        title_text = BeautifulSoup(raw_title, "html.parser").get_text(strip=True) or "Sans titre"
+    except Exception:
+        title_text = "Sans titre"
 
-    prompt = f"""### ROLE
-You're a French world-class copywriter specializing in video games. Your job is to update and improve article sections based on additional information provided.
+    content_html = "\n".join(block["content"])
 
-### GOAL
-- Identify if a section is:
-  - VALID (still accurate and complete with the additional information)
-  - TO BE UPDATED (can be improved with the additional context)
-  - OUTDATED (needs significant rewriting based on new information)
+    # Simplified prompt to match exactly what works in Django
+    prompt = f"""Tu es un expert en rédaction de jeux vidéo. Évalue cette section et réponds avec un des formats suivants UNIQUEMENT :
 
-### VERIFICATION STRATEGY
-- Compare the section content to the additional information provided.
-- Look for opportunities to enrich the content with competitor insights or missing details.
-- If the section can be improved with more context or better information, update it.
+STATUS: VALID
+[explication courte]
 
-### INSTRUCTIONS
-- If VALID → respond `STATUS: VALID` and explain briefly why.
-- If TO BE UPDATED → respond `STATUS: TO BE UPDATED` and give a corrected version (HTML).
-- If OUTDATED → respond `STATUS: OUTDATED` and give a rewritten version (HTML).
-- Use <p>, <ul>, <li>, <strong>, <em>, etc. No <div>, no inline styles.
-- Write in French.
+OU
 
-### TECHNICAL LIMITATIONS
-- Never use long dashes (—). Replace them with a comma, semicolon or period.
-- Never exceed three lines per paragraph. Cut long ideas into several shorter blocks.
+STATUS: TO BE UPDATED
+[nouveau HTML]
 
-Sujet : {subject}
-Titre : {title_text}
+OU
 
-Contenu HTML actuel :
-{content_html}
+STATUS: OUTDATED  
+[nouveau HTML]
 
-Informations additionnelles à intégrer :
-{additional_content}
+Section à évaluer :
+Titre: {title_text}
+Contenu: {content_html}
 
-Évalue cette section et mets-la à jour si besoin."""
+Contexte additionnel: {additional_content}
+
+Sujet: {subject}"""
 
     try:
         response = llm.invoke(prompt)
         result = response.content.strip()
         print(f"[GPT] Bloc '{title_text}' ➤ {result[:80]}...")
 
-        if result.startswith("STATUS: VALID"):
+        if "STATUS: VALID" in result:
             return block
-        elif result.startswith("STATUS: TO BE UPDATED") or result.startswith("STATUS: OUTDATED"):
-            html_start = result.split("\n", 1)[1].strip()
-            soup = BeautifulSoup(html_start, "html.parser")
-            updated_block = {
-                "title": title,
-                "content": list(soup.contents)
-            }
-            return updated_block
+
+        elif "STATUS: TO BE UPDATED" in result or "STATUS: OUTDATED" in result:
+            # Extract HTML portion
+            lines = result.split('\n')
+            html_content = ""
+            found_status = False
+
+            for line in lines:
+                if "STATUS:" in line:
+                    found_status = True
+                    continue
+                if found_status and line.strip():
+                    if '<' in line or html_content:
+                        html_content += line + '\n'
+
+            html_content = html_content.strip()
+
+            if html_content and '<' in html_content:
+                soup = BeautifulSoup(html_content, "html.parser")
+                updated_block = {
+                    "title": raw_title,  # Keep original HTML title as str
+                    "content": [str(e) for e in soup.contents if isinstance(e, Tag)]
+                }
+                print(f"[DEBUG] Successfully updated block: {title_text}")
+                return updated_block
+            else:
+                print(f"[WARNING] No valid HTML found for: {title_text}")
+                return block
         else:
+            print(f"[WARNING] No STATUS found in response for: {title_text}")
             return block
 
     except Exception as e:
@@ -363,9 +392,13 @@ Informations additionnelles à intégrer :
 
 
 def diagnose_missing_sections(subject, original_html, additional_content):
-    """Diagnose missing sections using ChatAnthropic"""
-    prompt = f"""### ROLE
-Tu es un éditeur de contenu. Ton rôle est d'analyser un article déjà rédigé et des informations additionnelles afin d'identifier les sujets pertinents qui ne sont pas encore couverts.
+    """Diagnose missing sections - EXACT format from views2.py"""
+    prompt = [
+        {
+            "role": "system",
+            "content": """
+### ROLE
+Tu es un éditeur de contenu. Ton rôle est d'analyser un article déjà rédigé et un transcript brut afin d'identifier les sujets pertinents qui ne sont pas encore couverts.
 
 ### GOAL
 Génère entre 1 et 3 nouvelles sections pertinentes à ajouter à l'article. Chaque section doit avoir :
@@ -374,7 +407,7 @@ Génère entre 1 et 3 nouvelles sections pertinentes à ajouter à l'article. Ch
 
 ### GUIDELINES
 - Ne suggère pas de doublons : les thèmes déjà traités dans l'article ne doivent pas être répétés.
-- Priorise les informations nouvelles ou complémentaires qui enrichiraient l'article.
+- Priorise les apports d'expérience ou d'angle personnel non couverts.
 - Reste simple et informatif : ne génère pas de contenu ou de paragraphe.
 
 ### TECHNICAL LIMITATIONS
@@ -382,14 +415,21 @@ Génère entre 1 et 3 nouvelles sections pertinentes à ajouter à l'article. Ch
 - Ne génère rien d'autre (pas d'explication ou de commentaire)
 - N'utilise jamais de tirets longs (—). Remplace-les par une virgule, un point-virgule ou un point selon le contexte.
 - Ne dépasse jamais trois lignes par paragraphe. Coupe les idées longues en plusieurs blocs plus courts.
-
+"""
+        },
+        {
+            "role": "user",
+            "content": f"""
 Sujet : {subject}
 
 Article HTML :
 {original_html}
 
-Informations additionnelles :
-{additional_content}"""
+Transcript vidéo :
+{additional_content}
+"""
+        }
+    ]
 
     try:
         response = llm.invoke(prompt)
@@ -400,38 +440,50 @@ Informations additionnelles :
 
 
 def generate_sections(subject, diagnostic, additional_content):
-    """Generate new sections using ChatAnthropic"""
-    prompt = f"""### ROLE
-Tu es un expert en contenu gaming qui enrichit les articles avec des informations pratiques et utiles.
+    """Generate new sections - EXACT format from views2.py"""
+    prompt = [
+        {
+            "role": "system",
+            "content": """
+### ROLE
+Tu es un joueur passionné qui partage ses avis et expériences sur les jeux vidéo de manière naturelle, mais claire.
 
 ### GOAL
-Écrire des sections informatives et détaillées en français (100 mots minimum), basées sur les informations additionnelles fournies.
+Écrire des paragraphes immersifs et personnels en français (100 mots minimum), à partir de ton expérience de jeu.
 
 ### GUIDELINES
-- Utilise un ton informatif mais accessible.
-- Intègre les informations pratiques et utiles des sources fournies.
-- Reste factuel et précis dans tes explications.
-- Structure le contenu de manière claire et logique.
+- Utilise la première personne : partage tes ressentis, tes doutes, tes frustrations ou tes moments marquants.
+- Adopte un ton naturel, humain : comme si tu écrivais à un ami joueur, sans jargon marketing ni langue de bois.
+- Évite les textes trop lisses ou trop formels : garde un peu d'hésitation, de spontanéité.
+- Reste fluide : phrases simples, quelques respirations, mais pas trop relâché.
+- Tu peux inclure des interjections ou des remarques personnelles (ex. : "honnêtement, j'étais paumé", "franchement, j'ai galéré"), mais modérément.
 
 ### STYLE
-- Informatif > promotionnel
-- Pratique et utile pour le lecteur
-- Évite les références aux marques ou sources
-- Ton professionnel mais accessible
+- Naturel > structuré
+- Ton personnel, mais pas familier ou vulgaire
+- Un peu de style rédactionnel, sans être encyclopédique
+- Fragments de phrases ou contradictions légères bienvenus
 
 ### TECHNICAL LIMITATIONS
-- HTML only: <h2>, <h3>, <p>, <ul>, <li>, <strong>, <em>, <blockquote>
+- HTML only: <h2>, <h3>, <p>, <ul>, <li>, <strong>, <em>, <blockquote>, <img>, <a>
 - Une seule section par titre
 - N'utilise jamais de tirets longs (—). Remplace-les par une virgule, un point-virgule ou un point selon le contexte.
 - Ne dépasse jamais trois lignes par paragraphe. Coupe les idées longues en plusieurs blocs plus courts.
-
+"""
+        },
+        {
+            "role": "user",
+            "content": f"""
 Sujet : {subject}
 
 Sections à créer :
 {diagnostic}
 
-Informations additionnelles disponibles :
-{additional_content}"""
+Transcript :
+{additional_content}
+"""
+        }
+    ]
 
     try:
         # Use higher temperature and other parameters like views2.py
@@ -449,8 +501,12 @@ Informations additionnelles disponibles :
 
 
 def merge_final_article(subject, reconstructed_html, generated_sections):
-    """Merge everything into final article using ChatAnthropic - EXACT logic from views2.py"""
-    prompt = f"""### ROLE
+    """Merge everything into final article - EXACT format from views2.py"""
+    prompt = [
+        {
+            "role": "system",
+            "content": """
+### ROLE
 You are a senior French web editor specialized in video game journalism.
 
 ### GOAL
@@ -476,19 +532,26 @@ You must analyze the original structure and enrich it with **new content**, espe
 - Use only the following HTML tags: <h2>, <h3>, <p>, <ul>, <li>, <strong>, <em>, <blockquote>, <img>, <a>
 - Do NOT use <html>, <body>, <head>, <style> or inline styles.
 - Do not return any explanation or comment.
-- Do not add meta-commentary like "[Continue...]" or "[Le reste du contenu...]"
+- Do not add meta-commentary like "[Continue...]" or "[Le reste du contenu...]" or "[Suite du contenu...]"
 - Return ONLY the complete merged HTML content, nothing else.
 
 ### OUTPUT
 Return only clean, merged HTML. No headers, no extra output, no commentary, without long dashes.
-
+"""
+        },
+        {
+            "role": "user",
+            "content": f"""
 Sujet : {subject}
 
 Article révisé :
 {reconstructed_html}
 
 Nouvelles sections générées à intégrer :
-{generated_sections}"""
+{generated_sections}
+"""
+        }
+    ]
 
     try:
         # Use specific parameters like views2.py
@@ -508,8 +571,11 @@ Nouvelles sections générées à intégrer :
             lines = result.split('\n')
             cleaned_lines = []
             for line in lines:
+                # Skip lines that contain meta-commentary in brackets
                 if not re.search(r'\[.*\]', line.strip()):
                     cleaned_lines.append(line)
+                else:
+                    print(f"[DEBUG] Removing meta-commentary: {line.strip()}")
             result = '\n'.join(cleaned_lines)
 
         return result

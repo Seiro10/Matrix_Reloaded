@@ -1,5 +1,6 @@
-from typing import Dict, Any, Optional, List
+from typing import Dict, Any, Optional, List, Union
 from typing_extensions import TypedDict
+from bs4 import Tag
 
 
 class ArticleRewriterState(TypedDict):
@@ -13,8 +14,8 @@ class ArticleRewriterState(TypedDict):
     # Processing data
     original_html: Optional[str]
     temp_file_path: Optional[str]
-    html_blocks: Optional[List[Dict]]
-    updated_blocks: Optional[List[Dict]]
+    html_blocks: Optional[List[Dict[str, Union[str, List[str]]]]]
+    updated_blocks: Optional[List[Dict[str, Union[str, List[str]]]]]
     reconstructed_html: Optional[str]
     diagnostic: Optional[str]
     generated_sections: Optional[str]

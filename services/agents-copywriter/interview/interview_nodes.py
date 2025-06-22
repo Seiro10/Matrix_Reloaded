@@ -10,6 +10,8 @@ from langchain_openai import ChatOpenAI
 from langgraph.checkpoint.memory import MemorySaver
 from langgraph.graph import START, END, StateGraph
 from langchain_core.messages import get_buffer_string
+from writing.content_models import ContentBlock, StructuredSection
+
 
 llm = ChatOpenAI(model="gpt-4o-mini")
 
@@ -57,7 +59,7 @@ Stay in character throughout the conversation.
 
 
 def answer_question(state: InterviewSession):
-    """Expert reads the question and answers it using only the documents found in search."""
+    """Expert reads the question and answers it with strategic formatting."""
 
     # Get the journalist's assigned headlines for context
     assigned_headlines = getattr(state["journalist"], 'assigned_headlines', [])
@@ -74,22 +76,84 @@ The journalist is focusing on these specific headlines:
 And here are documents you should use to answer the question:
 {state["sources"]}
 
-Format: 
-1. Use only the info from the documents but rephrase all the informations to avoid plagiarism.
-2. Don't guess or add anything new.
-3. Start with a quick summary to give some context about the question.
-4. Use paragraphs, lists and tables to make the content more digest
-5. For each of them, explain in which aspect they are the best, and why the reader should consider buying it.
-6. Write a conclusion to helps the reader with his decision
-8. Reference documents using numbers like [1], [2].
-9. List those sources at the bottom.
-10. For example, write: [1] assistant/docs/mcp_guide.pdf, page 7.
+**STRATEGIC FORMATTING INSTRUCTIONS:**
+Use these formatting techniques to make your response more digestible:
 
+**Paragraphs** for explanations and context:
+- Use for storytelling and detailed explanations
+- "D'après mon expérience avec ce produit..."
+
+**Bullet lists** for specifications and features:
+- Use when listing technical specs or key points
+- Example: "Les caractéristiques principales :"
+- • Poids: 63g
+- • Capteur: PixArt 3395
+- • Autonomie: 95 heures
+
+**Pros/Cons** for product evaluations:
+- **Avantages :**
+- ✅ Point positif 1
+- ✅ Point positif 2
+- **Inconvénients :**
+- ❌ Point négatif 1
+
+**Tables** for direct comparisons (markdown format):
+| Modèle | Prix | Performance |
+|--------|------|-------------|
+| Modèle A | 100€ | Excellente |
+| Modèle B | 150€ | Bonne |
+
+**Guidelines:**
+1. Start with context in paragraph form
+2. Use bullet lists for dense technical information
+3. Include pros/cons when evaluating products
+4. Reference documents using [1], [2], etc.
+5. Balance different formats - don't make everything a list
+6. Keep the flow natural and conversational
 """)
+
     expert_reply = llm.invoke([system_msg] + state["messages"])
     expert_reply.name = "expert"
 
     return {"messages": [expert_reply]}
+
+
+def format_structured_response(structured_section) -> str:
+    """Convert structured section back to readable text for conversation."""
+    response = f"## {structured_section.heading}\n\n"
+
+    for block in structured_section.blocks:
+        if block.type == "paragraph":
+            response += f"{block.content}\n\n"
+        elif block.type == "bullet_list":
+            response += f"{block.content}\n"
+            for item in block.items or []:
+                response += f"• {item}\n"
+            response += "\n"
+        elif block.type == "numbered_list":
+            response += f"{block.content}\n"
+            for i, item in enumerate(block.items or [], 1):
+                response += f"{i}. {item}\n"
+            response += "\n"
+        elif block.type == "table":
+            response += f"{block.content}\n"
+            if block.table_data:
+                for row in block.table_data:
+                    response += "| " + " | ".join(row) + " |\n"
+            response += "\n"
+        elif block.type == "pros_cons":
+            response += f"{block.content}\n"
+            if block.pros:
+                response += "**Avantages:**\n"
+                for pro in block.pros:
+                    response += f"✅ {pro}\n"
+            if block.cons:
+                response += "**Inconvénients:**\n"
+                for con in block.cons:
+                    response += f"❌ {con}\n"
+            response += "\n"
+
+    return response
 
 
 def save_interview(state: InterviewSession):

@@ -11,68 +11,128 @@ from langchain_openai import ChatOpenAI
 from langchain_anthropic import ChatAnthropic
 from langchain_core.runnables import RunnableConfig
 from langchain_core.output_parsers import JsonOutputParser
+from writing.content_models import StructuredAffiliate, StructuredGuideNews, ContentBlock, StructuredSection
 
 
 def merge_sections_node(state):
-    llm = ChatOpenAI(model="gpt-4o-mini", temperature=1, top_p=0.9)
+    llm = ChatOpenAI(model="gpt-4o-mini", temperature=0.5, top_p=0.9)  # Température plus basse
 
     # Extract headlines and post_type from state
     headlines = state.get("headlines", [])
-    post_type = state.get("post_type", "Guide")  # Get post_type from state
+    post_type = state.get("post_type", "Guide")
     headlines_text = "\n".join([f"- {headline}" for headline in headlines])
 
     system_msg = SystemMessage(content=f"""
     ## ROLE:
-    You're a product journalist writing for a gaming blog in French. Your are an expert who's tested dozens of products and played thousands of video games.
+    You're a product journalist writing for a gaming blog in French. You're an expert who's tested dozens of products.
 
-    ### GOAL
-    Write immersive, personal articles in French and format your response as **pure JSON** (no markdown, no triple backticks).
+    ### CRITICAL: RESPONSE FORMAT
+    You MUST respond with a valid JSON object that follows this EXACT structure:
+    {state['report_structure']}
+
+    ### FORMATTING WITHIN JSON TEXT FIELDS:
+    Inside the paragraph text, use these formatting techniques:
+
+    **Bullet Lists**: Use this format inside paragraphs:
+    ```
+    "paragraph": "Introduction text.\n\nLes principales caractéristiques :\n- Point 1\n- Point 2\n- Point 3\n\nConclusion text."
+    ```
+
+    **Pros/Cons**: Use this format:
+    ```
+    "paragraph": "Description.\n\n**Avantages :**\n- ✅ Point positif 1\n- ✅ Point positif 2\n\n**Inconvénients :**\n- ❌ Point négatif 1"
+    ```
+
+    **Tables**: Use proper markdown table format:
+    ```
+    "paragraph": "Description.\n\n| Colonne 1 | Colonne 2 |\n|-----------|----------|\n| Valeur 1 | Valeur 2 |\n| Valeur 3 | Valeur 4 |"
+    ```
 
     ### IMPORTANT: USE THESE EXACT HEADLINES
     You MUST use these specific headlines in your article structure:
     {headlines_text}
 
-    These headlines were provided by experts and MUST be included in the final article.
+    ### WRITING STYLE:
+    - First person, personal tone
+    - Natural, conversational French
+    - Share real testing experiences
+    - Be honest about limitations
+    - Mix formatting types within text for readability
 
-    ### WRITING GUIDELINES
-    - Use the first person: share your feelings, doubts, frustrations or memorable moments.
-    - Adopt a natural, human tone: as if you were writing to a gamer friend, without marketing jargon or tongue-in-cheek.
-    - Avoid texts that are too smooth or too formal: keep a little hesitation, a little spontaneity.
-    - Stay fluid: simple sentences, a few breaths, but not too relaxed.
-    - You can include interjections or personal remarks but in moderation.
-    - Keep in mind that we are in 2025. 
-    - Omit needless words. Vigorous writing is concise. 
-    - Use the active voice. Prefer concrete, physical language and analogies.
-    - Keep the tabs and lists given by the experts.
-
-    ### STYLE
-    - Write in French
-    - Natural > structured
-    - Personal tone, but not colloquial or vulgar
-    - Some editorial style, but not encyclopedic
-    - Sentence fragments or slight contradictions welcome
-    - Do not use – at all.
-
+    ### JSON VALIDATION:
+    - Escape quotes properly with \"
+    - No trailing commas
+    - All strings must be properly closed
+    - Return ONLY the JSON object, no markdown formatting around it
     """)
 
     human_msg = HumanMessage(content=f"""
-    You are provided with structured interview section outputs from multiple experts.
-    Your task is to synthesize and write a unified product comparison article, in French, based on the provided structure.
-    A sentence should contain no unnecessary words, a paragraph no unnecessary sentences, for the same reason that a drawing should have no unnecessary lines and a machine no unnecessary parts.This requires not that the writer make all their sentences short, or that they avoid all detail and treat their subjects only in outline, but that they make every word tell.
+    Create an article based on these interview sections.
 
-    IMPORTANT: You MUST incorporate ALL of these headlines in your article:
+    CRITICAL: Respond with ONLY a valid JSON object following this structure:
+    {json.dumps(state['report_structure'], indent=2, ensure_ascii=False)}
+
+    Headlines to include:
     {headlines_text}
-    
-    --- STRUCTURE (Follow this JSON schema) ---
-    Never wrap JSON in ```json ... ``` or any formatting. Respond with clean raw JSON.
-    {state['report_structure']}
 
-    --- INTERVIEW SECTIONS ---
+    Interview sections:
     {state['sections']}
+
+    Remember:
+    1. Response must be valid JSON
+    2. Include strategic formatting (lists, tables, pros/cons) WITHIN the paragraph text
+    3. Use \\n for line breaks inside strings
+    4. Escape quotes with \"
+    5. No markdown code blocks around the JSON
     """)
 
     response = llm.invoke([system_msg, human_msg])
-    return {"article": response.content, "headlines": headlines, "post_type": post_type}
+
+    # Clean the response to ensure it's valid JSON
+    content = response.content.strip()
+
+    # Remove any markdown formatting around JSON
+    content = re.sub(r'^```json\s*', '', content)
+    content = re.sub(r'\s*```$', '', content)
+
+    # Try to parse and validate JSON
+    try:
+        parsed_article = json.loads(content)
+        print("[DEBUG] ✅ Successfully parsed JSON from merge_sections_node")
+        return {"article": parsed_article, "headlines": headlines, "post_type": post_type}
+    except json.JSONDecodeError as e:
+        print(f"[ERROR] ❌ JSON decode error in merge_sections_node: {e}")
+        print(f"[DEBUG] Raw content preview: {content[:300]}...")
+
+        # Fallback: try to fix common JSON issues
+        fixed_content = fix_json_content(content)
+        try:
+            parsed_article = json.loads(fixed_content)
+            print("[DEBUG] ✅ Successfully parsed fixed JSON")
+            return {"article": parsed_article, "headlines": headlines, "post_type": post_type}
+        except:
+            print("[DEBUG] ❌ Could not fix JSON, returning raw content")
+            return {"article": content, "headlines": headlines, "post_type": post_type}
+
+
+def fix_json_content(content: str) -> str:
+    """
+    Try to fix common JSON formatting issues
+    """
+    # Remove trailing commas
+    content = re.sub(r',(\s*[}\]])', r'\1', content)
+
+    # Fix unescaped quotes in strings (basic attempt)
+    # This is tricky and might need more sophisticated handling
+
+    # Remove any non-JSON content at start/end
+    start_idx = content.find('{')
+    end_idx = content.rfind('}') + 1
+
+    if start_idx != -1 and end_idx > start_idx:
+        content = content[start_idx:end_idx]
+
+    return content
 
 
 def optimize_article(article_json, headlines=None):
@@ -99,7 +159,6 @@ def optimize_article(article_json, headlines=None):
     Ton but est de reprendre un article structuré en JSON et de :
 
     - Réorganiser les paragraphes pour plus de fluidité narrative. 
-    - Tu as le droit de modifier la structure afin de modifier la position des (paragraphs1 à paragraphs4) 
     - Supprimer les redondances
     - Améliorer le style rédactionnel (ton naturel, fluide, conversationnel)
     - Corriger les fautes de grammaire ou formulations maladroites

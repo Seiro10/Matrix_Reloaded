@@ -6,11 +6,11 @@ class Settings(BaseSettings):
     # Anthropic settings
     anthropic_api_key: str
 
-    # OpenAI / LangSmith (ajouté)
-    openai_api_key: str
+    # OpenAI / LangSmith settings
+    openai_api_key: str = ""
     langsmith_tracing: bool = False
     langsmith_endpoint: str = "https://api.smith.langchain.com"
-    langchain_api_key: str
+    langchain_api_key: str = ""
     langsmith_project: str = "default"
 
     # WordPress settings
@@ -26,7 +26,7 @@ class Settings(BaseSettings):
     class Config:
         env_file = ".env"
         case_sensitive = False
-        extra = "forbid"  # 🚫 Rejette les clés inconnues
+        extra = "allow"  # Allow extra fields for flexibility
 
 
 # Global settings instance

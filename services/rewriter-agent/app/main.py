@@ -31,7 +31,17 @@ async def update_blog_article_pipeline(request: ArticleUpdateRequest):
             "error": None,
             "status": "initialized",
             "final_html": "",
-            "post_id": None
+            "post_id": None,
+            "original_html": None,
+            "temp_file_path": None,
+            "html_blocks": None,
+            "updated_blocks": None,
+            "reconstructed_html": None,
+            "diagnostic": None,
+            "generated_sections": None,
+            "slug": None,
+            "jwt_token": None,
+            "memory": None
         }
 
         print(f"[PIPELINE] Processing article: {request.article_url}")
@@ -78,7 +88,7 @@ async def update_blog_article_from_csv(file: UploadFile = File(...)):
         # Extract data from first row (assuming single article per CSV)
         row = rows[0]
 
-        # Map CSV columns to our format
+        # Map CSV columns to our format - EXACT logic from working Django code
         article_url = row.get('Url', '').strip()
         subject = row.get('KW', '').strip()
 
@@ -113,7 +123,17 @@ async def update_blog_article_from_csv(file: UploadFile = File(...)):
             "error": None,
             "status": "initialized",
             "final_html": "",
-            "post_id": None
+            "post_id": None,
+            "original_html": None,
+            "temp_file_path": None,
+            "html_blocks": None,
+            "updated_blocks": None,
+            "reconstructed_html": None,
+            "diagnostic": None,
+            "generated_sections": None,
+            "slug": None,
+            "jwt_token": None,
+            "memory": None
         }
 
         # Run the LangGraph workflow
