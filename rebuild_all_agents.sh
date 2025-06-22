@@ -41,7 +41,7 @@ log_info "🚀 Starting complete rebuild process using unified docker-compose.ya
 SERVICES=(
     "content-finder:8000"
     "router-agent:8080"
-    "rewriter-agent:8082"
+    "rewriter-main:8085"
     "copywriter-agent:8083"
     "metadata-generator:8084"
 )
@@ -60,12 +60,14 @@ docker compose down
 # Remove all related containers (cleanup any orphaned containers)
 log_info "🧹 Cleaning up any orphaned containers..."
 docker stop deployment-rewriter-agent-1 2>/dev/null || true
+docker stop deployment-rewriter-main-1 2>/dev/null || true
 docker stop router-agent-router-agent-1 2>/dev/null || true
 docker stop agents-content-finder-content-finder-1 2>/dev/null || true
 docker stop agents-copywriter-copywriter-agent-1 2>/dev/null || true
 docker stop metadata-generator-metadata-generator-1 2>/dev/null || true
 docker stop matrix_reloaded-metadata-agent-1 2>/dev/null || true
 docker rm deployment-rewriter-agent-1 2>/dev/null || true
+docker rm deployment-rewriter-main-1 2>/dev/null || true
 docker rm router-agent-router-agent-1 2>/dev/null || true
 docker rm agents-content-finder-content-finder-1 2>/dev/null || true
 docker rm agents-copywriter-copywriter-agent-1 2>/dev/null || true
@@ -74,7 +76,7 @@ docker rm matrix_reloaded-metadata-agent-1 2>/dev/null || true
 
 # Additional cleanup for any containers using ports we need
 log_info "🔍 Checking for port conflicts..."
-for port in 8000 8080 8082 8083 8084; do
+for port in 8000 8080 8083 8084 8085; do
   CONTAINER_ID=$(docker ps -q --filter publish=$port)
   if [ ! -z "$CONTAINER_ID" ]; then
     log_warn "Found container using port $port: $CONTAINER_ID"
@@ -90,6 +92,7 @@ docker compose down --rmi all 2>/dev/null || true
 
 # Additional cleanup for any remaining images
 docker rmi deployment-rewriter-agent 2>/dev/null || true
+docker rmi deployment-rewriter-main 2>/dev/null || true
 docker rmi router-agent-router-agent 2>/dev/null || true
 docker rmi agents-content-finder-content-finder 2>/dev/null || true
 docker rmi agents-copywriter-copywriter-agent 2>/dev/null || true
@@ -148,11 +151,11 @@ else
     all_healthy=false
 fi
 
-# Check rewriter-agent
-if check_service_health "rewriter-agent" "8082"; then
-    services_status+=("rewriter-agent:OK")
+# Check rewriter-main
+if check_service_health "rewriter-main" "8085"; then
+    services_status+=("rewriter-main:OK")
 else
-    services_status+=("rewriter-agent:FAIL")
+    services_status+=("rewriter-main:FAIL")
     all_healthy=false
 fi
 
@@ -191,8 +194,8 @@ echo "  📍 Content-finder: http://localhost:8000"
 echo "  📍 Content-finder health: http://localhost:8000/health"
 echo "  📍 Router-agent: http://localhost:8080"
 echo "  📍 Router-agent health: http://localhost:8080/health"
-echo "  📍 Rewriter-agent: http://localhost:8082"
-echo "  📍 Rewriter-agent health: http://localhost:8082/health"
+echo "  📍 Rewriter-main: http://localhost:8085"
+echo "  📍 Rewriter-main health: http://localhost:8085/health"
 echo "  📍 Copywriter-agent: http://localhost:8083"
 echo "  📍 Copywriter-agent health: http://localhost:8083/health"
 echo "  📍 Metadata-generator: http://localhost:8084"
@@ -201,7 +204,7 @@ echo "  📍 Metadata-generator health: http://localhost:8084/health"
 echo ""
 log_info "🔗 Service communication (internal Docker network):"
 echo "  content-finder → http://router-agent:8080"
-echo "  router-agent → http://metadata-generator:8084"
+echo "  router-agent → http://rewriter-main:8085"
 echo "  metadata-generator → http://copywriter-agent:8083"
 
 echo ""
@@ -227,9 +230,9 @@ if [ "$all_healthy" = true ]; then
     log_info "💡 Test the complete workflow:"
     echo "  1. Send a request to content-finder: http://localhost:8000"
     echo "  2. Content-finder will automatically call router-agent"
-    echo "  3. Router-agent will call metadata-generator"
-    echo "  4. Metadata-generator will call copywriter-agent"
-    echo "  5. Copywriter-agent will generate and publish the article"
+    echo "  3. Router-agent will call rewriter-main"
+    echo "  4. Rewriter-main will process and update articles"
+    echo "  5. Metadata-generator can call copywriter-agent if needed"
     echo ""
     log_info "🔧 Useful commands:"
     echo "  View logs: docker-compose logs [service-name]"
@@ -241,7 +244,7 @@ else
     log_info "🔍 To check logs:"
     echo "  docker-compose logs content-finder"
     echo "  docker-compose logs router-agent"
-    echo "  docker-compose logs rewriter-agent"
+    echo "  docker-compose logs rewriter-main"
     echo "  docker-compose logs copywriter-agent"
     echo "  docker-compose logs metadata-generator"
     echo ""

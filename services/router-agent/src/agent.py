@@ -2,7 +2,7 @@
 Fixed Router Agent - agent.py
 Simplified to send proper JSON to rewriter agent
 """
-
+import json
 import sys
 import os
 from typing import Dict, Any
@@ -27,7 +27,7 @@ from langgraph.graph import StateGraph, START, END
 logger = logging.getLogger(__name__)
 
 # Configuration for agent services
-REWRITER_AGENT_URL = os.getenv("REWRITER_AGENT_URL", "http://localhost:8082")
+REWRITER_AGENT_URL = os.getenv("REWRITER_AGENT_URL", "http://localhost:8085")
 METADATA_GENERATOR_URL = os.getenv("METADATA_GENERATOR_URL", "http://localhost:8084")
 
 
@@ -163,54 +163,76 @@ def create_csv_for_metadata_generator(keyword: str, keyword_data: Dict[str, Any]
 
 
 def call_rewriter_agent_json(existing_url: str, keyword: str, additional_content: str) -> Dict[str, Any]:
-    """Call rewriter agent with JSON payload instead of CSV"""
+    """Call rewriter-main with JSON payload - FIXED for new FastAPI service"""
     try:
-        logger.info(f"🔄 Calling Rewriter Agent for keyword: {keyword}")
+        logger.info(f"🔄 Calling Rewriter-Main for keyword: {keyword}")
 
-        # FIXED: Prepare payload with correct field names
+        # FIXED: Prepare payload with correct field names for rewriter-main
         payload = {
-            "article_url": existing_url,    # Changed from "existing_url"
-            "subject": keyword,             # Changed from "keyword"
-            "additional_content": additional_content
+            "article_url": existing_url,  # ✅ Correct field name
+            "subject": keyword,  # ✅ Correct field name
+            "additional_content": additional_content  # ✅ Correct field name
         }
 
-        # FIXED: Use correct endpoint URL
+        logger.info(f"🔗 Calling: {REWRITER_AGENT_URL}/update-blog-article")
+        logger.info(f"📦 Payload: {json.dumps(payload, indent=2)}")
+
+        # FIXED: Use correct endpoint for rewriter-main
         response = requests.post(
-            f"{REWRITER_AGENT_URL}/update-blog-article",  # Changed from "/rewrite"
+            f"{REWRITER_AGENT_URL}/update-blog-article",  # ✅ Correct endpoint
             json=payload,
             headers={"Content-Type": "application/json"},
-            timeout=60
+            timeout=120  # Increased timeout for processing
         )
+
+        logger.info(f"📡 Response status: {response.status_code}")
 
         if response.status_code == 200:
             result = response.json()
-            logger.info(f"✅ Rewriter Agent called successfully")
+            logger.info(f"✅ Rewriter-Main called successfully")
+            logger.info(f"📝 Message: {result.get('message')}")
+
             return {
                 "success": True,
                 "message": result.get("message"),
-                "article_id": result.get("post_id"),  # Rewriter returns "post_id"
-                "content": result.get("updated_html", ""),  # Rewriter returns "updated_html"
+                "article_id": result.get("post_id"),  # rewriter-main returns "post_id"
+                "content": result.get("updated_html", ""),  # rewriter-main returns "updated_html"
                 "rewriter_response": result
             }
         else:
-            logger.error(f"❌ Rewriter Agent call failed: {response.status_code}")
+            logger.error(f"❌ Rewriter-Main call failed: {response.status_code}")
+            logger.error(f"❌ Response text: {response.text}")
             return {
                 "success": False,
                 "error": f"HTTP {response.status_code}: {response.text}",
                 "rewriter_response": None
             }
 
+    except requests.exceptions.Timeout:
+        logger.error(f"❌ Timeout calling Rewriter-Main")
+        return {
+            "success": False,
+            "error": "Timeout calling rewriter-main service",
+            "rewriter_response": None
+        }
+    except requests.exceptions.ConnectionError:
+        logger.error(f"❌ Connection error to Rewriter-Main at {REWRITER_AGENT_URL}")
+        return {
+            "success": False,
+            "error": f"Cannot connect to rewriter-main at {REWRITER_AGENT_URL}",
+            "rewriter_response": None
+        }
     except Exception as e:
-        logger.error(f"❌ Error calling Rewriter Agent: {e}")
+        logger.error(f"❌ Error calling Rewriter-Main: {e}")
         return {
             "success": False,
             "error": str(e),
             "rewriter_response": None
         }
-    
+
 
 def build_additional_content(keyword_data: Dict[str, Any]) -> str:
-    """Build additional content from SERP data for rewriter"""
+    """Build additional content from SERP data for rewriter-main"""
     content_parts = []
 
     # Add competitor content
@@ -224,7 +246,19 @@ def build_additional_content(keyword_data: Dict[str, Any]) -> str:
     if people_also_ask:
         content_parts.append(f"Questions fréquentes: {'; '.join(people_also_ask)}")
 
-    return "\n\n".join(content_parts)
+    # Add forum data if available
+    forum_data = keyword_data.get('forum', [])
+    if forum_data:
+        content_parts.append(f"Discussions forum: {'; '.join(forum_data)}")
+
+    additional_content = "\n\n".join(content_parts)
+
+    logger.info(f"📝 Built additional content ({len(additional_content)} chars)")
+    logger.info(f"   💬 {len(organic_results)} competitor contents")
+    logger.info(f"   ❓ {len(people_also_ask)} FAQ items")
+    logger.info(f"   🗨️ {len(forum_data)} forum discussions")
+
+    return additional_content
 
 
 def intelligent_routing_node(state: RouterState) -> RouterState:

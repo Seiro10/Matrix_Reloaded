@@ -3,7 +3,7 @@ from typing_extensions import TypedDict
 
 
 class ArticleRewriterState(TypedDict):
-    """State for the article rewriter workflow"""
+    """State for the article rewriter workflow - FIXED to handle BeautifulSoup objects properly"""
 
     # Input data
     article_url: str
@@ -13,9 +13,9 @@ class ArticleRewriterState(TypedDict):
     # Processing data
     original_html: Optional[str]
     temp_file_path: Optional[str]
-    # FIXED: Allow BeautifulSoup objects in the block structure
-    html_blocks: Optional[List[Dict[str, Any]]]  # Changed from Union[str, List[str]] to Any
-    updated_blocks: Optional[List[Dict[str, Any]]]  # Changed from Union[str, List[str]] to Any
+    # CRITICAL: These must accept Any to handle BeautifulSoup Tag objects
+    html_blocks: Optional[List[Dict[str, Any]]]  # Contains BeautifulSoup Tag objects
+    updated_blocks: Optional[List[Dict[str, Any]]]  # Contains BeautifulSoup Tag objects
     reconstructed_html: Optional[str]
     diagnostic: Optional[str]
     generated_sections: Optional[str]
