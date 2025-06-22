@@ -167,15 +167,16 @@ def call_rewriter_agent_json(existing_url: str, keyword: str, additional_content
     try:
         logger.info(f"🔄 Calling Rewriter Agent for keyword: {keyword}")
 
-        # Prepare payload for rewriter
+        # FIXED: Prepare payload with correct field names
         payload = {
-            "existing_url": existing_url,
-            "keyword": keyword,
+            "article_url": existing_url,    # Changed from "existing_url"
+            "subject": keyword,             # Changed from "keyword"
             "additional_content": additional_content
         }
 
+        # FIXED: Use correct endpoint URL
         response = requests.post(
-            f"{REWRITER_AGENT_URL}/rewrite",
+            f"{REWRITER_AGENT_URL}/update-blog-article",  # Changed from "/rewrite"
             json=payload,
             headers={"Content-Type": "application/json"},
             timeout=60
@@ -187,8 +188,8 @@ def call_rewriter_agent_json(existing_url: str, keyword: str, additional_content
             return {
                 "success": True,
                 "message": result.get("message"),
-                "article_id": result.get("article_id"),
-                "content": result.get("content", ""),
+                "article_id": result.get("post_id"),  # Rewriter returns "post_id"
+                "content": result.get("updated_html", ""),  # Rewriter returns "updated_html"
                 "rewriter_response": result
             }
         else:
@@ -206,7 +207,7 @@ def call_rewriter_agent_json(existing_url: str, keyword: str, additional_content
             "error": str(e),
             "rewriter_response": None
         }
-
+    
 
 def build_additional_content(keyword_data: Dict[str, Any]) -> str:
     """Build additional content from SERP data for rewriter"""

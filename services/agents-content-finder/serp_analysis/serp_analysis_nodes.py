@@ -75,8 +75,8 @@ async def query_brightdata_serp_structured(keyword: str):
         "format": "json",
         "snapshot_query": {
             "url": f"https://www.google.com/search?q={urllib.parse.quote_plus(keyword)}",
-            "country": "FR",
-            "language": "fr"
+            "country": "US",
+            "language": "en"
         }
     }
 
