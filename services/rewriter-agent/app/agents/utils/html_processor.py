@@ -89,6 +89,8 @@ class HTMLProcessor:
         if main_img:
             print("[CLEAN] 🖼️ Image principale supprimée")
             main_img.decompose()
+        else:
+            print("[CLEAN] ℹ️ Aucune image wp-post-image trouvée à supprimer")
 
         return str(soup)
 
@@ -125,13 +127,10 @@ class HTMLProcessor:
         return soup
 
     def clean_all_images(self, soup):
-        """Clean and optimize all images - EXACT COPY from utils.py"""
+        """Clean and optimize all images - MODIFIED to preserve content images"""
         restored = 0
         removed_svg = 0
         removed_empty_p = 0
-        removed_duplicates = 0
-
-        seen_srcs = set()
 
         # 1. Restaurer les vraies images à partir des balises lazy
         for img in soup.find_all("img"):
@@ -151,34 +150,38 @@ class HTMLProcessor:
                 img.decompose()
                 removed_svg += 1
                 # Supprimer <p> vide laissé derrière
-                if parent.name == "p" and not parent.text.strip() and len(parent.find_all()) == 0:
+                if parent and parent.name == "p" and not parent.text.strip() and len(parent.find_all()) == 0:
                     parent.decompose()
                     removed_empty_p += 1
 
-        # 3. Collecter tous les src dans les <figure> ou <picture>
-        for figure in soup.find_all(["figure", "picture"]):
-            for img in figure.find_all("img"):
-                if img.get("src"):
-                    seen_srcs.add(img["src"])
+        # 4. 🔧 Restaurer <img> manquant dans <picture> si nécessaire
+        picture_restored = 0
+        for picture in soup.find_all("picture"):
+            has_img = picture.find("img")
+            if not has_img:
+                source = picture.find("source")
+                src = ""
 
-        # 4. Supprimer les images en double hors figure/picture
-        for img in soup.find_all("img"):
-            src = img.get("src")
-            if not src or src not in seen_srcs:
-                continue
-            if not img.find_parent(["figure", "picture"]):
-                parent = img.parent
-                img.decompose()
-                removed_duplicates += 1
-                # Supprimer <p> vide s'il ne reste rien
-                if parent.name == "p" and not parent.text.strip() and len(parent.find_all()) == 0:
-                    parent.decompose()
-                    removed_empty_p += 1
+                # Récupération depuis data-lazy-srcset ou srcset
+                if source and source.get("data-lazy-srcset"):
+                    srcset = source["data-lazy-srcset"]
+                    src = srcset.split(",")[0].split(" ")[0].strip()
+                elif source and source.get("srcset"):
+                    srcset = source["srcset"]
+                    src = srcset.split(",")[0].split(" ")[0].strip()
 
-        print(f"[DEBUG] ✅ {restored} images restaurées depuis lazy-src")
-        print(f"[DEBUG] 🗑️ {removed_svg} SVG placeholders supprimés")
-        print(f"[DEBUG] 🧼 {removed_empty_p} <p> vides supprimés")
-        print(f"[DEBUG] 🧽 {removed_duplicates} images dupliquées supprimées")
+                if src:
+                    img_tag = soup.new_tag("img", src=src)
+                    img_tag["alt"] = picture.get("alt", "")
+                    picture.append(img_tag)
+                    picture_restored += 1
+
+        if picture_restored:
+            print(f"[DEBUG] 🧩 {picture_restored} <img> restaurés dans <picture> manquants")
+            print(f"[DEBUG] ✅ {restored} images restaurées depuis lazy-src")
+            print(f"[DEBUG] 🗑️ {removed_svg} SVG placeholders supprimés")
+            print(f"[DEBUG] 🧼 {removed_empty_p} <p> vides supprimés")
+            print(f"[DEBUG] ℹ️ Conservation des images de contenu (pas de suppression de doublons)")
 
         return soup
 

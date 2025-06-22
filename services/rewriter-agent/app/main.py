@@ -163,6 +163,38 @@ async def health_check():
     return {"status": "healthy", "message": "Blog Article Rewriter API is running"}
 
 
+def debug_block_processing(html_content: str):
+    """Debug function to test block extraction and reconstruction"""
+    from app.agents.utils.html_processor import HTMLProcessor
+
+    processor = HTMLProcessor()
+
+    print("[DEBUG] Starting block processing test...")
+
+    # Extract blocks
+    blocks = processor.extract_html_blocks(html_content)
+    print(f"[DEBUG] Extracted {len(blocks)} blocks")
+
+    # Debug each block
+    for i, block in enumerate(blocks):
+        title_text = block['title'].get_text() if block['title'] else "No title"
+        content_count = len(block['content'])
+        print(f"[DEBUG] Block {i + 1}: '{title_text}' with {content_count} content elements")
+
+        # Debug content types
+        for j, elem in enumerate(block['content']):
+            elem_type = type(elem).__name__
+            elem_name = getattr(elem, 'name', 'text') if hasattr(elem, 'name') else 'text'
+            print(f"[DEBUG]   Content {j + 1}: {elem_type} - {elem_name}")
+
+    # Test reconstruction
+    reconstructed = processor.reconstruct_blocks(blocks)
+    print(f"[DEBUG] Reconstructed HTML length: {len(reconstructed)} characters")
+    print(f"[DEBUG] First 200 chars: {reconstructed[:200]}...")
+
+    return blocks, reconstructed
+
+
 if __name__ == "__main__":
     uvicorn.run(
         "app.main:app",
@@ -170,3 +202,4 @@ if __name__ == "__main__":
         port=8082,
         reload=True
     )
+

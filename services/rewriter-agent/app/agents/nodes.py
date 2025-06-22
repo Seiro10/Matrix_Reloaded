@@ -105,21 +105,43 @@ def get_post_id_node(state: ArticleRewriterState) -> ArticleRewriterState:
 
 
 def process_html_blocks_node(state: ArticleRewriterState) -> ArticleRewriterState:
-    """Extract and process HTML blocks"""
+    """Extract and process HTML blocks - WITH DEBUG"""
     print("[NODE] Processing HTML blocks")
 
     try:
         processor = HTMLProcessor()
         blocks = processor.extract_html_blocks(state["original_html"])
 
-        # Convertir tous les tags BeautifulSoup en string propre
-        for block in blocks:
-            block["title"] = str(block["title"]) if block["title"] else ""
-            block["content"] = [str(e) for e in block["content"]]
-
         state["html_blocks"] = blocks
-
         print(f"[NODE] ✅ Extracted {len(blocks)} HTML blocks")
+
+        # DEBUG: Check blocks content in detail
+        for i, block in enumerate(blocks):
+            title_text = "Sans titre"
+            if block.get("title") and hasattr(block["title"], "get_text"):
+                title_text = block["title"].get_text(strip=True)[:50]
+
+            content_preview = ""
+            media_elements = []
+
+            for j, elem in enumerate(block["content"]):
+                elem_str = str(elem)
+                content_preview += elem_str[:100] + "... " if len(elem_str) > 100 else elem_str + " "
+
+                # Check for media
+                if "figure" in elem_str:
+                    media_elements.append(f"figure(pos:{j})")
+                if "iframe" in elem_str:
+                    media_elements.append(f"iframe(pos:{j})")
+                if "img" in elem_str and "wp-post-image" not in elem_str:
+                    media_elements.append(f"img(pos:{j})")
+                if "wp-block-embed" in elem_str:
+                    media_elements.append(f"embed(pos:{j})")
+
+            print(f"[DEBUG] Block {i + 1} '{title_text}': {len(block['content'])} elements")
+            if media_elements:
+                print(f"[DEBUG] ↪ Media found: {', '.join(media_elements)}")
+            print(f"[DEBUG] ↪ Content preview: {content_preview[:200]}...")
 
     except Exception as e:
         state["error"] = f"Failed to process HTML blocks: {str(e)}"
@@ -130,7 +152,7 @@ def process_html_blocks_node(state: ArticleRewriterState) -> ArticleRewriterStat
 
 
 def update_blocks_node(state: ArticleRewriterState) -> ArticleRewriterState:
-    """Update blocks based on additional content - EXACT logic from views2.py"""
+    """Update blocks based on additional content - WITH DEBUG"""
     print("[NODE] Updating blocks with new content")
 
     try:
@@ -140,18 +162,62 @@ def update_blocks_node(state: ArticleRewriterState) -> ArticleRewriterState:
             block_title = "Sans titre"
             if block.get("title"):
                 try:
-                    # Tenter d'extraire le texte du titre HTML
-                    soup = BeautifulSoup(block["title"], "html.parser")
-                    block_title = soup.get_text(strip=True) or "Sans titre"
+                    if hasattr(block["title"], "get_text"):
+                        block_title = block["title"].get_text(strip=True) or "Sans titre"
+                    else:
+                        soup = BeautifulSoup(str(block["title"]), "html.parser")
+                        block_title = soup.get_text(strip=True) or "Sans titre"
                 except Exception:
                     block_title = "Sans titre"
+
             print(f"[DEBUG] Traitement du bloc {i + 1}/{len(state['html_blocks'])}: {block_title}")
+
+            # DEBUG: Check media BEFORE update
+            content_str_before = "\n".join([str(elem) for elem in block["content"]])
+            media_before = []
+            if "figure" in content_str_before:
+                media_before.append("figure")
+            if "iframe" in content_str_before:
+                media_before.append("iframe")
+            if "img" in content_str_before and "wp-post-image" not in content_str_before:
+                media_before.append("img")
+            if "wp-block-embed" in content_str_before:
+                media_before.append("embed")
+
+            if media_before:
+                print(f"[DEBUG] ↪ BEFORE update - Media: {', '.join(media_before)}")
+                print(f"[DEBUG] ↪ BEFORE content length: {len(content_str_before)} chars")
 
             updated_block = update_block_if_needed(
                 block,
                 state["subject"],
                 state["additional_content"]
             )
+
+            # DEBUG: Check media AFTER update
+            content_str_after = "\n".join([str(elem) for elem in updated_block["content"]])
+            media_after = []
+            if "figure" in content_str_after:
+                media_after.append("figure")
+            if "iframe" in content_str_after:
+                media_after.append("iframe")
+            if "img" in content_str_after and "wp-post-image" not in content_str_after:
+                media_after.append("img")
+            if "wp-block-embed" in content_str_after:
+                media_after.append("embed")
+
+            if media_before or media_after:
+                print(f"[DEBUG] ↪ AFTER update - Media: {', '.join(media_after) if media_after else 'NONE'}")
+                print(f"[DEBUG] ↪ AFTER content length: {len(content_str_after)} chars")
+
+                # Check if media was lost
+                if media_before and not media_after:
+                    print(f"[WARNING] ❌ MEDIA LOST in block: {block_title}")
+                    print(f"[WARNING] ↪ Lost elements: {', '.join(media_before)}")
+                elif media_before != media_after:
+                    print(f"[WARNING] ⚠️ MEDIA CHANGED in block: {block_title}")
+                    print(f"[WARNING] ↪ Before: {', '.join(media_before)} → After: {', '.join(media_after)}")
+
             updated_blocks.append(updated_block)
 
         state["updated_blocks"] = updated_blocks
@@ -166,7 +232,7 @@ def update_blocks_node(state: ArticleRewriterState) -> ArticleRewriterState:
 
 
 def reconstruct_article_node(state: ArticleRewriterState) -> ArticleRewriterState:
-    """Reconstruct the article from updated blocks"""
+    """Reconstruct the article from updated blocks - WITH DEBUG"""
     print("[NODE] Reconstructing article")
 
     try:
@@ -174,9 +240,30 @@ def reconstruct_article_node(state: ArticleRewriterState) -> ArticleRewriterStat
         reconstructed = processor.reconstruct_blocks(state["updated_blocks"])
 
         state["reconstructed_html"] = reconstructed
-        print("[NODE] ✅ Article reconstructed")
-        print("[DEBUG] ▶️ Preview reconstructed HTML:")
-        print(state["reconstructed_html"][:1000])
+
+        # DEBUG: Detailed media analysis of final reconstruction
+        soup_debug = BeautifulSoup(reconstructed, "html.parser")
+        figures = soup_debug.find_all("figure")
+        iframes = soup_debug.find_all("iframe")
+        images = soup_debug.find_all("img")
+        embeds = soup_debug.find_all(class_="wp-block-embed")
+
+        print(f"[NODE] ✅ Article reconstructed")
+        print(f"[DEBUG] Final reconstruction media count:")
+        print(f"[DEBUG] ↪ {len(figures)} figures")
+        print(f"[DEBUG] ↪ {len(iframes)} iframes")
+        print(f"[DEBUG] ↪ {len(images)} images")
+        print(f"[DEBUG] ↪ {len(embeds)} embeds")
+
+        if figures:
+            for i, fig in enumerate(figures[:3]):  # Show first 3
+                print(f"[DEBUG] ↪ Figure {i + 1}: {str(fig)[:100]}...")
+
+        if iframes:
+            for i, iframe in enumerate(iframes[:3]):  # Show first 3
+                print(f"[DEBUG] ↪ Iframe {i + 1}: {str(iframe)[:100]}...")
+
+        print(f"[DEBUG] Reconstructed HTML length: {len(reconstructed)} characters")
 
     except Exception as e:
         state["error"] = f"Failed to reconstruct article: {str(e)}"
@@ -235,7 +322,14 @@ def merge_final_article_node(state: ArticleRewriterState) -> ArticleRewriterStat
     print("[NODE] Merging final article")
 
     try:
-        # First apply strip_duplicate_title_and_featured_image like Django does
+        # Backup H1 before cleaning
+        original_h1 = ""
+        soup_before_strip = BeautifulSoup(state["reconstructed_html"], "html.parser")
+        h1_tag = soup_before_strip.find("h1")
+        if h1_tag:
+            original_h1 = str(h1_tag)
+
+        # Strip duplicate title and featured image like in Django
         processor = HTMLProcessor()
         cleaned_reconstructed = processor.strip_duplicate_title_and_featured_image(state["reconstructed_html"])
 
@@ -245,13 +339,23 @@ def merge_final_article_node(state: ArticleRewriterState) -> ArticleRewriterStat
             state["generated_sections"]
         )
 
-        # Apply media cleaning pipeline like Django views2.py
+        # Optional: restore original <h1> if LLM didn’t include any
+        if original_h1 and "<h1" not in final_html:
+            final_html = original_h1 + "\n" + final_html
+            print("[DEBUG-MERGE] ✅ H1 restauré manuellement en haut de l’article")
+
+        # Apply media cleaning pipeline
         print("[DEBUG] ▶️ Applying media cleaning pipeline")
         soup_final = BeautifulSoup(final_html, "html.parser")
         soup_final = processor.clean_all_images(soup_final)
         soup_final = processor.simplify_youtube_embeds(soup_final)
         soup_final = processor.restore_youtube_iframes_from_rll_div(soup_final)
         final_html = str(soup_final)
+
+        # Check for major content loss
+        if len(final_html) < 0.3 * len(cleaned_reconstructed):
+            print("[WARNING] 🚨 Perte excessive de contenu détectée. Fallback activé.")
+            final_html = cleaned_reconstructed + "\n\n" + state["generated_sections"]
 
         state["final_html"] = final_html
         state["status"] = "content_ready"
@@ -267,6 +371,7 @@ def merge_final_article_node(state: ArticleRewriterState) -> ArticleRewriterStat
         print(f"[NODE] ❌ Final merge failed: {e}")
 
     return state
+
 
 
 def publish_to_wordpress_node(state: ArticleRewriterState) -> ArticleRewriterState:
@@ -314,17 +419,67 @@ llm = ChatAnthropic(
 
 
 def update_block_if_needed(block, subject, additional_content):
-    """Update a single block if needed - EXACT format from views2.py with simpler prompt"""
+    """Update a single block if needed - FIXED to preserve complete figure structures"""
     raw_title = block.get("title", "")
     try:
-        title_text = BeautifulSoup(raw_title, "html.parser").get_text(strip=True) or "Sans titre"
+        if hasattr(raw_title, "get_text"):
+            title_text = raw_title.get_text(strip=True) or "Sans titre"
+        else:
+            title_text = BeautifulSoup(str(raw_title), "html.parser").get_text(strip=True) or "Sans titre"
     except Exception:
         title_text = "Sans titre"
 
-    content_html = "\n".join(block["content"])
+    # DEBUG: Detailed content analysis
+    content_html = "\n".join([str(elem) for elem in block["content"]])
 
-    # Simplified prompt to match exactly what works in Django
-    prompt = f"""Tu es un expert en rédaction de jeux vidéo. Évalue cette section et réponds avec un des formats suivants UNIQUEMENT :
+    print(f"[DEBUG-GPT] Processing block: {title_text}")
+    print(f"[DEBUG-GPT] ↪ Input content length: {len(content_html)} chars")
+    print(f"[DEBUG-GPT] ↪ Input block['content'] has {len(block['content'])} elements")
+    print(f"[DEBUG-GPT] ↪ Element types: {[type(elem).__name__ for elem in block['content']]}")
+
+    # Check for specific media
+    figures_count = content_html.count("<figure")
+    iframes_count = content_html.count("<iframe")
+    images_count = content_html.count("<img") - content_html.count("wp-post-image")
+    embeds_count = content_html.count("wp-block-embed")
+
+    if figures_count or iframes_count or images_count or embeds_count:
+        print(
+            f"[DEBUG-GPT] ↪ Input media: {figures_count} figures, {iframes_count} iframes, {images_count} images, {embeds_count} embeds")
+
+    # FIXED: Enhanced prompt to preserve complete figure structures
+    has_media = figures_count > 0 or iframes_count > 0 or images_count > 0 or embeds_count > 0
+
+    if has_media:
+        prompt = f"""Tu es un expert en rédaction de jeux vidéo. Cette section contient des éléments média ESSENTIELS.
+
+RÈGLES STRICTES POUR LES MÉDIAS:
+- Si tu vois une balise <figure>, tu DOIS conserver TOUT son contenu interne (<img>, <picture>, <source>, etc.)
+- Si tu vois une balise <iframe>, tu DOIS la conserver COMPLÈTE avec tous ses attributs
+- Si tu vois une balise <img>, tu DOIS la conserver COMPLÈTE avec tous ses attributs (src, alt, class, etc.)
+- JAMAIS de figure vide comme <figure></figure>
+
+Évalue cette section et réponds avec un des formats suivants UNIQUEMENT :
+
+STATUS: VALID
+[explication courte]
+
+OU (seulement si vraiment obsolète ET en préservant TOUS les médias):
+
+STATUS: TO BE UPDATED
+[nouveau HTML avec TOUS les éléments figure/iframe/img COMPLETS]
+
+Section à évaluer :
+Titre: {title_text}
+Contenu: {content_html}
+
+Contexte additionnel: {additional_content}
+Sujet: {subject}
+
+ATTENTION: Cette section contient des médias - ils doivent être préservés INTÉGRALEMENT."""
+    else:
+        # Standard prompt for text-only blocks
+        prompt = f"""Tu es un expert en rédaction de jeux vidéo. Évalue cette section et réponds avec un des formats suivants UNIQUEMENT :
 
 STATUS: VALID
 [explication courte]
@@ -353,6 +508,7 @@ Sujet: {subject}"""
         print(f"[GPT] Bloc '{title_text}' ➤ {result[:80]}...")
 
         if "STATUS: VALID" in result:
+            print(f"[DEBUG-GPT] ↪ Block marked VALID - returning original")
             return block
 
         elif "STATUS: TO BE UPDATED" in result or "STATUS: OUTDATED" in result:
@@ -373,10 +529,59 @@ Sujet: {subject}"""
 
             if html_content and '<' in html_content:
                 soup = BeautifulSoup(html_content, "html.parser")
+
+                # FIXED: Better validation for complete figure structures
+                valid_content = []
+                for elem in soup.contents:
+                    if isinstance(elem, Tag):
+                        # Special validation for figures
+                        if elem.name == 'figure':
+                            # Check if figure has content inside
+                            has_content = bool(elem.find_all(['img', 'iframe', 'picture', 'source']))
+                            if has_content:
+                                valid_content.append(elem)
+                                print(f"[DEBUG-GPT] ↪ ✅ Complete figure preserved: {str(elem)[:100]}...")
+                            else:
+                                print(f"[WARNING] ❌ Empty figure detected, skipping: {str(elem)}")
+                        else:
+                            valid_content.append(elem)
+                    elif hasattr(elem, 'strip') and elem.strip():
+                        # Handle text nodes by wrapping in p tag
+                        p_tag = soup.new_tag('p')
+                        p_tag.string = elem.strip()
+                        valid_content.append(p_tag)
+
                 updated_block = {
-                    "title": raw_title,  # Keep original HTML title as str
-                    "content": [str(e) for e in soup.contents if isinstance(e, Tag)]
+                    "title": raw_title,  # Keep original BeautifulSoup object
+                    "content": valid_content
                 }
+
+                # DEBUG: Check output with detailed figure analysis
+                output_html = "\n".join([str(elem) for elem in valid_content])
+                output_figures = output_html.count("<figure")
+                output_iframes = output_html.count("<iframe")
+                output_images = output_html.count("<img") - output_html.count("wp-post-image")
+                output_embeds = output_html.count("wp-block-embed")
+
+                # Check for empty figures
+                empty_figures = output_html.count("<figure></figure>") + output_html.count(
+                    "<figure class=") - output_html.count("<img")
+                if "<figure" in output_html and "<img" not in output_html and "<iframe" not in output_html:
+                    print(f"[WARNING] ❌ Potential empty figures detected in output!")
+
+                print(f"[DEBUG-GPT] ↪ Output content length: {len(output_html)} chars")
+                print(f"[DEBUG-GPT] ↪ Output has {len(valid_content)} elements")
+                if output_figures or output_iframes or output_images or output_embeds:
+                    print(
+                        f"[DEBUG-GPT] ↪ Output media: {output_figures} figures, {output_iframes} iframes, {output_images} images, {output_embeds} embeds")
+                else:
+                    print(f"[DEBUG-GPT] ↪ ❌ NO MEDIA in output!")
+
+                # FINAL VALIDATION: If input had media but output doesn't, return original
+                if has_media and not (output_figures or output_iframes or output_images or output_embeds):
+                    print(f"[WARNING] ❌ Media lost during update, returning original block")
+                    return block
+
                 print(f"[DEBUG] Successfully updated block: {title_text}")
                 return updated_block
             else:
@@ -501,7 +706,7 @@ Transcript :
 
 
 def merge_final_article(subject, reconstructed_html, generated_sections):
-    """Merge everything into final article - EXACT format from views2.py"""
+    """Merge everything into final article - with fallback and stricter rules"""
     prompt = [
         {
             "role": "system",
@@ -517,6 +722,7 @@ You must analyze the original structure and enrich it with **new content**, espe
 - Use the updated article as the foundation.
 - Carefully read the generated sections. If a generated section fits an existing section's topic, **integrate the new content as extra paragraphs inside that section.**
 - Do not repeat or rephrase what is already covered.
+- Do not remove any section or paragraph from the original article unless it is explicitly redundant.
 - Respect logical flow, tone, and style of the original article.
 - You may slightly rewrite paragraphs if it helps integrate the new information more smoothly.
 - Update all references to years (e.g., 2024) to reflect the current year (2025) if the content is meant to be up to date.
@@ -532,11 +738,8 @@ You must analyze the original structure and enrich it with **new content**, espe
 - Use only the following HTML tags: <h2>, <h3>, <p>, <ul>, <li>, <strong>, <em>, <blockquote>, <img>, <a>
 - Do NOT use <html>, <body>, <head>, <style> or inline styles.
 - Do not return any explanation or comment.
-- Do not add meta-commentary like "[Continue...]" or "[Le reste du contenu...]" or "[Suite du contenu...]"
+- Do not add meta-commentary like "[Continue...]" or "[Le reste du contenu...]"
 - Return ONLY the complete merged HTML content, nothing else.
-
-### OUTPUT
-Return only clean, merged HTML. No headers, no extra output, no commentary, without long dashes.
 """
         },
         {
@@ -554,7 +757,6 @@ Nouvelles sections générées à intégrer :
     ]
 
     try:
-        # Use specific parameters like views2.py
         merge_llm = ChatAnthropic(
             model="claude-3-5-sonnet-20241022",
             api_key=settings.anthropic_api_key,
@@ -564,21 +766,15 @@ Nouvelles sections générées à intégrer :
         response = merge_llm.invoke(prompt)
         result = response.content.strip()
 
-        # Remove any meta-commentary that might have been added
+        # Optionnel : suppression des lignes contenant des commentaires LLM
         if "[" in result and "]" in result:
             import re
-            # Remove lines with meta-commentary
             lines = result.split('\n')
-            cleaned_lines = []
-            for line in lines:
-                # Skip lines that contain meta-commentary in brackets
-                if not re.search(r'\[.*\]', line.strip()):
-                    cleaned_lines.append(line)
-                else:
-                    print(f"[DEBUG] Removing meta-commentary: {line.strip()}")
+            cleaned_lines = [line for line in lines if not re.search(r'\[.*\]', line.strip())]
             result = '\n'.join(cleaned_lines)
 
         return result
+
     except Exception as e:
         print(f"[ERROR] ChatAnthropic merge failed: {e}")
         return reconstructed_html + "\n\n" + generated_sections
