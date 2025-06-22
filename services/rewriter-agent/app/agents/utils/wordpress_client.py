@@ -4,14 +4,13 @@ from app.config import settings
 
 
 class WordPressClient:
-    """WordPress API client adapted from your original code"""
+    """WordPress API client adapted from your original working code"""
 
     def __init__(self):
         self.base_url = settings.wordpress_base_url
 
     def get_jwt_token(self, username, password):
-        """Get JWT token for WordPress authentication"""
-        # FIXED: Remove duplicate wp-json in URL construction
+        """Get JWT token for WordPress authentication - EXACT logic from utils.py"""
         auth_url = f"{self.base_url}/wp-json/jwt-auth/v1/token"
         payload = {
             "username": username,
@@ -33,13 +32,13 @@ class WordPressClient:
             return None
 
     def extract_slug_from_url(self, url):
-        """Extract slug from WordPress URL"""
+        """Extract slug from WordPress URL - EXACT logic from utils.py"""
         path = urlparse(url).path
         parts = [p for p in path.strip("/").split("/") if p]
         return parts[-1] if parts else None
 
     def get_post_id_from_slug(self, slug, jwt_token):
-        """Get WordPress post ID from slug"""
+        """Get WordPress post ID from slug - EXACT logic from utils.py"""
         try:
             api_url = f"{self.base_url}/wp-json/wp/v2/posts?slug={slug}"
             headers = {
@@ -58,7 +57,7 @@ class WordPressClient:
             return None
 
     def update_wordpress_article(self, post_id, html_txt_file, jwt_token):
-        """Update WordPress article with new content"""
+        """Update WordPress article with new content - EXACT logic from utils.py"""
         update_url = f"{self.base_url}/wp-json/wp/v2/posts/{post_id}"
 
         try:
@@ -88,6 +87,7 @@ class WordPressClient:
             return True
         except Exception as e:
             print(f"[ERROR] ❌ Échec de la mise à jour de l'article : {e}")
-            print(f"[DEBUG] ↪ Status: {res.status_code}")
-            print(f"[DEBUG] ↪ Response: {res.text}")
+            if 'res' in locals():
+                print(f"[DEBUG] ↪ Status: {res.status_code}")
+                print(f"[DEBUG] ↪ Response: {res.text}")
             return False
