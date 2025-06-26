@@ -1,6 +1,6 @@
 """
-Fixed Router Agent - agent.py
-Simplified to send proper JSON to rewriter agent
+Router Agent with Human-in-the-Loop - agent.py
+Added human validation steps before routing decisions
 """
 import json
 import sys
@@ -8,6 +8,7 @@ import os
 from typing import Dict, Any
 from datetime import datetime
 from langgraph.checkpoint.memory import InMemorySaver
+from langgraph.types import interrupt
 import requests
 import logging
 
@@ -261,8 +262,8 @@ def build_additional_content(keyword_data: Dict[str, Any]) -> str:
     return additional_content
 
 
-def intelligent_routing_node(state: RouterState) -> RouterState:
-    """Simplified routing node using direct WordPress content analysis"""
+def intelligent_routing_node_original(state: RouterState) -> RouterState:
+    """Original routing node that completes the entire workflow without HIL"""
     input_data = state["input_data"]
     keyword = input_data.get_primary_keyword()
 
@@ -326,7 +327,7 @@ def intelligent_routing_node(state: RouterState) -> RouterState:
                 'monthly_searches': keyword_obj.monthly_searches
             }
 
-        # Step 6: Call appropriate agent
+        # Step 6: Call appropriate agent immediately (no HIL)
         routing_target = routing_decision["routing_decision"]
         confidence = routing_decision["confidence"]
         reasoning = routing_decision["combined_reasoning"]
@@ -350,6 +351,7 @@ def intelligent_routing_node(state: RouterState) -> RouterState:
 
         else:
             # Create CSV and call metadata generator for copywriter path
+            # Metadata-Generator will then call Copywriter-Agent automatically
             site_info = {
                 "name": selected_site.name,
                 "domain": selected_site.domain,
@@ -359,6 +361,7 @@ def intelligent_routing_node(state: RouterState) -> RouterState:
             print(f"\n✍️ CALLING METADATA GENERATOR (COPYWRITER PATH)")
             print(f"Keyword: {keyword}")
             print(f"Site: {selected_site.name}")
+            print(f"Note: Metadata-Generator will automatically call Copywriter-Agent")
             print("=" * 50)
 
             # Create CSV file for metadata generator
@@ -446,12 +449,325 @@ def intelligent_routing_node(state: RouterState) -> RouterState:
         }
 
 
+def intelligent_routing_node(state: RouterState) -> RouterState:
+    """Routing node that analyzes content and prepares for human validation"""
+    input_data = state["input_data"]
+    keyword = input_data.get_primary_keyword()
+
+    logger.info(f"🧠 Starting WordPress-based routing for keyword: '{keyword}'")
+
+    try:
+        # Step 1: Fetch WordPress articles for both sites
+        content_analysis = {}
+
+        for website in WEBSITES:
+            logger.info(f"📊 Analyzing {website.name} ({website.niche})...")
+
+            articles_file = fetch_wordpress_articles.invoke(website.wordpress_api_url)
+            content_result = analyze_wordpress_content.invoke({
+                "keyword": keyword,
+                "articles_file": articles_file
+            })
+            content_analysis[website.niche] = content_result
+
+            logger.info(f"{'✅' if content_result['content_found'] else '❌'} "
+                        f"{website.niche}: {content_result['confidence']:.1%} confidence")
+
+        # Step 2: Make routing decision
+        routing_decision = make_intelligent_routing_decision.invoke({
+            "keyword": keyword,
+            "gaming_content": content_analysis.get("gaming", {}),
+            "motivation_content": content_analysis.get("motivation", {})
+        })
+
+        # Step 3: Select the website
+        selected_niche = routing_decision["selected_site_niche"]
+        selected_site = next(
+            (site for site in WEBSITES if site.niche == selected_niche),
+            WEBSITES[0]
+        )
+
+        # Step 4: Generate internal links
+        internal_links = generate_internal_links.invoke({
+            "keyword": keyword,
+            "site_id": selected_site.site_id,
+            "niche": selected_site.niche
+        })
+
+        # Step 5: Get keyword data
+        keyword_data = {}
+        if keyword in input_data.keywords_data:
+            keyword_obj = input_data.keywords_data[keyword]
+            keyword_data = {
+                'organic_results': [
+                    {
+                        'position': result.position,
+                        'title': result.title,
+                        'url': result.url,
+                        'snippet': result.snippet,
+                        'content': result.content or '',
+                    }
+                    for result in keyword_obj.organic_results
+                ],
+                'people_also_ask': keyword_obj.people_also_ask,
+                'competition': keyword_obj.competition,
+                'monthly_searches': keyword_obj.monthly_searches
+            }
+
+        # Step 6: Store analysis for human validation
+        routing_target = routing_decision["routing_decision"]
+        confidence = routing_decision["confidence"]
+        reasoning = routing_decision["combined_reasoning"]
+        best_content = routing_decision.get("best_content_match", {})
+
+        return {
+            **state,
+            "selected_site": {
+                "site_id": selected_site.site_id,
+                "name": selected_site.name,
+                "domain": selected_site.domain,
+                "niche": selected_site.niche,
+                "theme": selected_site.theme,
+                "language": selected_site.language,
+                "sitemap_url": selected_site.sitemap_url,
+                "wordpress_api_url": selected_site.wordpress_api_url
+            },
+            "routing_decision": routing_target,
+            "confidence_score": confidence,
+            "reasoning": reasoning,
+            "internal_linking_suggestions": internal_links,
+            "existing_content": best_content,
+            "keyword_data": keyword_data,
+            "analysis_complete": True
+        }
+
+    except Exception as e:
+        logger.error(f"❌ Error in WordPress-based routing: {e}")
+        # Fallback to first site and copywriter
+        default_site = WEBSITES[0]
+        return {
+            **state,
+            "selected_site": {
+                "site_id": default_site.site_id,
+                "name": default_site.name,
+                "domain": default_site.domain,
+                "niche": default_site.niche,
+                "theme": default_site.theme,
+                "language": default_site.language,
+                "sitemap_url": default_site.sitemap_url,
+                "wordpress_api_url": default_site.wordpress_api_url
+            },
+            "routing_decision": "copywriter",
+            "confidence_score": 0.3,
+            "reasoning": f"Fallback due to error: {str(e)}",
+            "internal_linking_suggestions": [],
+            "existing_content": None,
+            "keyword_data": {},
+            "analysis_complete": True
+        }
+
+
+def human_validation_node(state: RouterState) -> RouterState:
+    """Human validation node - asks for approval of routing decision"""
+
+    # Prepare summary for human review
+    keyword = state["input_data"].get_primary_keyword()
+    selected_site = state["selected_site"]
+    routing_decision = state["routing_decision"]
+    confidence = state["confidence_score"]
+    reasoning = state["reasoning"]
+    existing_content = state["existing_content"]
+
+    summary = {
+        "keyword": keyword,
+        "selected_site": selected_site["name"],
+        "routing_decision": routing_decision,
+        "confidence_score": f"{confidence:.1%}",
+        "reasoning": reasoning,
+        "existing_content_found": existing_content.get("content_found", False) if existing_content else False,
+        "best_match_title": existing_content.get("best_match", {}).get(
+            "title") if existing_content and existing_content.get("best_match") else None
+    }
+
+    logger.info(f"🤔 Requesting human validation for: {keyword}")
+    logger.info(f"   📍 Site: {selected_site['name']}")
+    logger.info(f"   🎯 Decision: {routing_decision}")
+    logger.info(f"   📊 Confidence: {confidence:.1%}")
+
+    # Interrupt for human validation
+    human_response = interrupt({
+        "type": "routing_approval",
+        "summary": summary,
+        "question": f"Do you approve this routing decision for '{keyword}'?",
+        "options": ["yes", "no"]
+    })
+
+    return {
+        **state,
+        "human_approval": human_response
+    }
+
+
+def human_action_choice_node(state: RouterState) -> RouterState:
+    """Node to ask human what action to take after approval"""
+
+    if state.get("human_approval") != "yes":
+        logger.info("❌ Human disapproved routing decision - stopping process")
+        return {
+            **state,
+            "final_action": "stop",
+            "process_stopped": True
+        }
+
+    keyword = state["input_data"].get_primary_keyword()
+    existing_content = state["existing_content"]
+
+    # Prepare options based on existing content
+    options = ["copywriter", "stop"]
+    if existing_content and existing_content.get("content_found"):
+        options.insert(0, "rewriter")  # Put rewriter first if content exists
+
+    # Ask human for action choice
+    action_choice = interrupt({
+        "type": "action_choice",
+        "keyword": keyword,
+        "question": "What action would you like to take?",
+        "options": options,
+        "existing_content": existing_content
+    })
+
+    return {
+        **state,
+        "final_action": action_choice
+    }
+
+
+def rewriter_url_input_node(state: RouterState) -> RouterState:
+    """Node to ask for URL when rewriter is chosen"""
+
+    if state.get("final_action") != "rewriter":
+        return state
+
+    keyword = state["input_data"].get_primary_keyword()
+    existing_content = state["existing_content"]
+    suggested_url = existing_content.get("best_match", {}).get("url") if existing_content and existing_content.get(
+        "best_match") else None
+
+    # Ask for URL input
+    url_input = interrupt({
+        "type": "url_input",
+        "keyword": keyword,
+        "question": "Please provide the URL of the article to rewrite:",
+        "suggested_url": suggested_url
+    })
+
+    return {
+        **state,
+        "rewriter_url": url_input
+    }
+
+
+def execute_action_node(state: RouterState) -> RouterState:
+    """Execute the chosen action"""
+
+    final_action = state.get("final_action")
+
+    if final_action == "stop":
+        logger.info("🛑 Process stopped by human choice")
+        return {
+            **state,
+            "process_stopped": True,
+            "agent_response": {
+                "success": True,
+                "message": "Process stopped by user request"
+            }
+        }
+
+    keyword = state["input_data"].get_primary_keyword()
+    selected_site = state["selected_site"]
+    keyword_data = state.get("keyword_data", {})
+    internal_links = state.get("internal_linking_suggestions", [])
+
+    agent_response = None
+
+    if final_action == "rewriter":
+        # Call rewriter with provided URL
+        rewriter_url = state.get("rewriter_url")
+        if not rewriter_url:
+            logger.error("❌ No URL provided for rewriter")
+            return {
+                **state,
+                "agent_response": {
+                    "success": False,
+                    "error": "No URL provided for rewriter"
+                }
+            }
+
+        additional_content = build_additional_content(keyword_data)
+
+        print(f"\n🔄 CALLING REWRITER AGENT")
+        print(f"Keyword: {keyword}")
+        print(f"Site: {selected_site['name']}")
+        print(f"URL: {rewriter_url}")
+        print("=" * 50)
+
+        agent_response = call_rewriter_agent_json(rewriter_url, keyword, additional_content)
+
+    elif final_action == "copywriter":
+        # Create CSV and call metadata generator
+        site_info = {
+            "name": selected_site["name"],
+            "domain": selected_site["domain"],
+            "niche": selected_site["niche"]
+        }
+
+        print(f"\n✍️ CALLING METADATA GENERATOR (COPYWRITER PATH)")
+        print(f"Keyword: {keyword}")
+        print(f"Site: {selected_site['name']}")
+        print("=" * 50)
+
+        # Create CSV file for metadata generator
+        csv_file = create_csv_for_metadata_generator(keyword, keyword_data, site_info)
+
+        if csv_file:
+            agent_response = call_metadata_generator_sync(csv_file, keyword)
+        else:
+            agent_response = {
+                "success": False,
+                "error": "Failed to create CSV file for metadata generator"
+            }
+
+    # Create output payload
+    output_payload = {
+        "agent_target": final_action,
+        "keyword": keyword,
+        "site_config": SiteInfo(**selected_site),
+        "serp_analysis": state["input_data"].get_serp_analysis(),
+        "similar_keywords": state["input_data"].get_similar_keywords(),
+        "internal_linking_suggestions": internal_links,
+        "routing_metadata": RoutingMetadata(
+            confidence_score=state["confidence_score"],
+            content_source="wordpress_api",
+            timestamp=datetime.now().isoformat()
+        ),
+        "existing_content": state["existing_content"],
+        "llm_reasoning": state["reasoning"],
+        "agent_response": agent_response
+    }
+
+    return {
+        **state,
+        "output_payload": output_payload,
+        "agent_response": agent_response
+    }
+
+
 def create_streamlined_router_agent():
-    """Create streamlined Content Router Agent"""
+    """Create streamlined Content Router Agent - ORIGINAL VERSION"""
     logger.info("🚀 Creating WordPress-based Content Router Agent")
 
     workflow = StateGraph(RouterState)
-    workflow.add_node("intelligent_routing", intelligent_routing_node)
+    workflow.add_node("intelligent_routing", intelligent_routing_node_original)
     workflow.add_edge(START, "intelligent_routing")
     workflow.add_edge("intelligent_routing", END)
 
@@ -462,14 +778,507 @@ def create_streamlined_router_agent():
     return compiled_workflow
 
 
-async def process_content_finder_output(content_data: ContentFinderOutput) -> Dict[str, Any]:
-    """Process content finder output with WordPress-based routing"""
-    keyword = content_data.get_primary_keyword()
-    logger.info(f"🎬 Starting WordPress-based routing for keyword: '{keyword}'")
+def create_human_in_the_loop_router_agent():
+    """Create Content Router Agent with Human-in-the-Loop validation"""
+    logger.info("🚀 Creating Human-in-the-Loop Content Router Agent")
+
+    workflow = StateGraph(RouterState)
+
+    # Add nodes
+    workflow.add_node("intelligent_routing", intelligent_routing_node)
+    workflow.add_node("human_validation", human_validation_node)
+    workflow.add_node("human_action_choice", human_action_choice_node)
+    workflow.add_node("rewriter_url_input", rewriter_url_input_node)
+    workflow.add_node("execute_action", execute_action_node)
+
+    # Add edges
+    workflow.add_edge(START, "intelligent_routing")
+    workflow.add_edge("intelligent_routing", "human_validation")
+    workflow.add_edge("human_validation", "human_action_choice")
+    workflow.add_edge("human_action_choice", "rewriter_url_input")
+    workflow.add_edge("rewriter_url_input", "execute_action")
+    workflow.add_edge("execute_action", END)
+
+    checkpointer = InMemorySaver()
+    compiled_workflow = workflow.compile(checkpointer=checkpointer)
+
+    logger.info("✅ Human-in-the-Loop Content Router Agent created")
+    return compiled_workflow
+
+
+def intelligent_routing_node_with_hil(state: RouterState) -> RouterState:
+    """Routing node WITH human-in-the-loop validation - used by /route endpoint"""
+    input_data = state["input_data"]
+    keyword = input_data.get_primary_keyword()
+
+    logger.info(f"🧠 Starting WordPress-based routing with HIL for keyword: '{keyword}'")
 
     try:
-        router_agent = create_streamlined_router_agent()
-        session_id = f"wp_router_{datetime.now().strftime('%Y%m%d_%H%M%S')}"
+        # Step 1: Fetch WordPress articles for both sites
+        content_analysis = {}
+
+        for website in WEBSITES:
+            logger.info(f"📊 Analyzing {website.name} ({website.niche})...")
+
+            articles_file = fetch_wordpress_articles.invoke(website.wordpress_api_url)
+            content_result = analyze_wordpress_content.invoke({
+                "keyword": keyword,
+                "articles_file": articles_file
+            })
+            content_analysis[website.niche] = content_result
+
+            logger.info(f"{'✅' if content_result['content_found'] else '❌'} "
+                        f"{website.niche}: {content_result['confidence']:.1%} confidence")
+
+        # Step 2: Make routing decision
+        routing_decision = make_intelligent_routing_decision.invoke({
+            "keyword": keyword,
+            "gaming_content": content_analysis.get("gaming", {}),
+            "motivation_content": content_analysis.get("motivation", {})
+        })
+
+        # Step 3: Select the website
+        selected_niche = routing_decision["selected_site_niche"]
+        selected_site = next(
+            (site for site in WEBSITES if site.niche == selected_niche),
+            WEBSITES[0]
+        )
+
+        # Step 4: Generate internal links
+        internal_links = generate_internal_links.invoke({
+            "keyword": keyword,
+            "site_id": selected_site.site_id,
+            "niche": selected_site.niche
+        })
+
+        # Step 5: Get keyword data
+        keyword_data = {}
+        if keyword in input_data.keywords_data:
+            keyword_obj = input_data.keywords_data[keyword]
+            keyword_data = {
+                'organic_results': [
+                    {
+                        'position': result.position,
+                        'title': result.title,
+                        'url': result.url,
+                        'snippet': result.snippet,
+                        'content': result.content or '',
+                    }
+                    for result in keyword_obj.organic_results
+                ],
+                'people_also_ask': keyword_obj.people_also_ask,
+                'competition': keyword_obj.competition,
+                'monthly_searches': keyword_obj.monthly_searches
+            }
+
+        # Step 6: HUMAN VALIDATION - Ask for approval
+        routing_target = routing_decision["routing_decision"]
+        confidence = routing_decision["confidence"]
+        reasoning = routing_decision["combined_reasoning"]
+        best_content = routing_decision.get("best_content_match", {})
+
+        # Prepare summary for human review
+        summary = {
+            "keyword": keyword,
+            "selected_site": selected_site.name,
+            "routing_decision": routing_target,
+            "confidence_score": f"{confidence:.1%}",
+            "reasoning": reasoning,
+            "existing_content_found": best_content.get("content_found", False) if best_content else False,
+            "best_match_title": best_content.get("best_match", {}).get("title") if best_content and best_content.get(
+                "best_match") else None
+        }
+
+        logger.info(f"🤔 Requesting human validation for: {keyword}")
+        logger.info(f"   📍 Site: {selected_site.name}")
+        logger.info(f"   🎯 Decision: {routing_target}")
+        logger.info(f"   📊 Confidence: {confidence:.1%}")
+
+        # FIRST INTERRUPT: Ask for approval
+        human_approval = interrupt({
+            "type": "routing_approval",
+            "summary": summary,
+            "question": f"Do you approve this routing decision for '{keyword}'?",
+            "options": ["yes", "no"]
+        })
+
+        if human_approval != "yes":
+            logger.info("❌ Human disapproved routing decision - stopping process")
+            return {
+                **state,
+                "process_stopped": True,
+                "agent_response": {
+                    "success": True,
+                    "message": "Process stopped by user - routing decision not approved"
+                }
+            }
+
+        # SECOND INTERRUPT: Ask for action choice
+        options = ["copywriter", "stop"]
+        if best_content and best_content.get("content_found"):
+            options.insert(0, "rewriter")  # Put rewriter first if content exists
+
+        final_action = interrupt({
+            "type": "action_choice",
+            "keyword": keyword,
+            "question": "What action would you like to take?",
+            "options": options,
+            "existing_content": best_content
+        })
+
+        if final_action == "stop":
+            logger.info("🛑 Process stopped by human choice")
+            return {
+                **state,
+                "process_stopped": True,
+                "agent_response": {
+                    "success": True,
+                    "message": "Process stopped by user request"
+                }
+            }
+
+        # THIRD INTERRUPT: If rewriter chosen, ask for URL
+        rewriter_url = None
+        if final_action == "rewriter":
+            suggested_url = best_content.get("best_match", {}).get("url") if best_content and best_content.get(
+                "best_match") else None
+
+            rewriter_url = interrupt({
+                "type": "url_input",
+                "keyword": keyword,
+                "question": "Please provide the URL of the article to rewrite:",
+                "suggested_url": suggested_url
+            })
+
+        # Step 7: Execute the chosen action
+        agent_response = None
+
+        if final_action == "rewriter":
+            if not rewriter_url:
+                logger.error("❌ No URL provided for rewriter")
+                agent_response = {
+                    "success": False,
+                    "error": "No URL provided for rewriter"
+                }
+            else:
+                additional_content = build_additional_content(keyword_data)
+
+                print(f"\n🔄 CALLING REWRITER AGENT")
+                print(f"Keyword: {keyword}")
+                print(f"Site: {selected_site.name}")
+                print(f"URL: {rewriter_url}")
+                print("=" * 50)
+
+                agent_response = call_rewriter_agent_json(rewriter_url, keyword, additional_content)
+
+        elif final_action == "copywriter":
+            # Create CSV and call metadata generator
+            site_info = {
+                "name": selected_site.name,
+                "domain": selected_site.domain,
+                "niche": selected_site.niche
+            }
+
+            print(f"\n✍️ CALLING METADATA GENERATOR (COPYWRITER PATH)")
+            print(f"Keyword: {keyword}")
+            print(f"Site: {selected_site.name}")
+            print("=" * 50)
+
+            # Create CSV file for metadata generator
+            csv_file = create_csv_for_metadata_generator(keyword, keyword_data, site_info)
+
+            if csv_file:
+                agent_response = call_metadata_generator_sync(csv_file, keyword)
+            else:
+                agent_response = {
+                    "success": False,
+                    "error": "Failed to create CSV file for metadata generator"
+                }
+
+        # Step 8: Create output payload
+        output_payload = {
+            "agent_target": final_action,
+            "keyword": keyword,
+            "site_config": SiteInfo(
+                site_id=selected_site.site_id,
+                name=selected_site.name,
+                domain=selected_site.domain,
+                niche=selected_site.niche,
+                theme=selected_site.theme,
+                language=selected_site.language,
+                sitemap_url=selected_site.sitemap_url,
+                wordpress_api_url=selected_site.wordpress_api_url
+            ),
+            "serp_analysis": input_data.get_serp_analysis(),
+            "similar_keywords": input_data.get_similar_keywords(),
+            "internal_linking_suggestions": internal_links,
+            "routing_metadata": RoutingMetadata(
+                confidence_score=confidence,
+                content_source="wordpress_api",
+                timestamp=datetime.now().isoformat()
+            ),
+            "existing_content": best_content,
+            "llm_reasoning": reasoning,
+            "agent_response": agent_response
+        }
+
+        return {
+            **state,
+            "selected_site": {
+                "site_id": selected_site.site_id,
+                "name": selected_site.name,
+                "domain": selected_site.domain,
+                "niche": selected_site.niche,
+                "theme": selected_site.theme,
+                "language": selected_site.language,
+                "sitemap_url": selected_site.sitemap_url,
+                "wordpress_api_url": selected_site.wordpress_api_url
+            },
+            "routing_decision": final_action,
+            "confidence_score": confidence,
+            "reasoning": reasoning,
+            "output_payload": output_payload,
+            "internal_linking_suggestions": internal_links,
+            "existing_content": best_content,
+            "agent_response": agent_response,
+            "human_validated": True
+        }
+
+    except Exception as e:
+        logger.error(f"❌ Error in WordPress-based routing with HIL: {e}")
+        # Fallback to first site and copywriter
+        default_site = WEBSITES[0]
+        return {
+            **state,
+            "selected_site": {
+                "site_id": default_site.site_id,
+                "name": default_site.name,
+                "domain": default_site.domain,
+                "niche": default_site.niche,
+                "theme": default_site.theme,
+                "language": default_site.language,
+                "sitemap_url": default_site.sitemap_url,
+                "wordpress_api_url": default_site.wordpress_api_url
+            },
+            "routing_decision": "copywriter",
+            "confidence_score": 0.3,
+            "reasoning": f"Fallback due to error: {str(e)}",
+            "output_payload": None,
+            "internal_linking_suggestions": [],
+            "existing_content": None,
+            "agent_response": None,
+            "human_validated": False
+        }
+
+
+def create_route_agent_with_hil():
+    """Create Content Router Agent with HIL for /route endpoint"""
+    logger.info("🚀 Creating Content Router Agent with HIL for /route")
+
+    workflow = StateGraph(RouterState)
+    workflow.add_node("intelligent_routing", intelligent_routing_node_with_hil)
+    workflow.add_edge(START, "intelligent_routing")
+    workflow.add_edge("intelligent_routing", END)
+
+    checkpointer = InMemorySaver()
+    compiled_workflow = workflow.compile(checkpointer=checkpointer)
+
+    logger.info("✅ Content Router Agent with HIL created for /route")
+    return compiled_workflow
+
+
+async def process_content_finder_output_with_api_hil(content_data: ContentFinderOutput) -> Dict[str, Any]:
+    """
+    Process content finder output with API-based human validation (for containers)
+    """
+    keyword = content_data.get_primary_keyword()
+    logger.info(f"🎬 Starting API-based HIL routing for keyword: '{keyword}'")
+
+    try:
+        # Step 1: Do the analysis (same as before)
+        content_analysis = {}
+        for website in WEBSITES:
+            logger.info(f"📊 Analyzing {website.name} ({website.niche})...")
+            articles_file = fetch_wordpress_articles.invoke(website.wordpress_api_url)
+            content_result = analyze_wordpress_content.invoke({
+                "keyword": keyword,
+                "articles_file": articles_file
+            })
+            content_analysis[website.niche] = content_result
+            logger.info(f"{'✅' if content_result['content_found'] else '❌'} "
+                        f"{website.niche}: {content_result['confidence']:.1%} confidence")
+
+        # Step 2: Make routing decision
+        routing_decision = make_intelligent_routing_decision.invoke({
+            "keyword": keyword,
+            "gaming_content": content_analysis.get("gaming", {}),
+            "motivation_content": content_analysis.get("motivation", {})
+        })
+
+        # Step 3: Select the website
+        selected_niche = routing_decision["selected_site_niche"]
+        selected_site = next(
+            (site for site in WEBSITES if site.niche == selected_niche),
+            WEBSITES[0]
+        )
+
+        # Step 4: Generate internal links
+        internal_links = generate_internal_links.invoke({
+            "keyword": keyword,
+            "site_id": selected_site.site_id,
+            "niche": selected_site.niche
+        })
+
+        # Step 5: Get keyword data
+        keyword_data = {}
+        if keyword in content_data.keywords_data:
+            keyword_obj = content_data.keywords_data[keyword]
+            keyword_data = {
+                'organic_results': [
+                    {
+                        'position': result.position,
+                        'title': result.title,
+                        'url': result.url,
+                        'snippet': result.snippet,
+                        'content': result.content or '',
+                    }
+                    for result in keyword_obj.organic_results
+                ],
+                'people_also_ask': keyword_obj.people_also_ask,
+                'competition': keyword_obj.competition,
+                'monthly_searches': keyword_obj.monthly_searches
+            }
+
+        # Step 6: Prepare validation data
+        routing_target = routing_decision["routing_decision"]
+        confidence = routing_decision["confidence"]
+        reasoning = routing_decision["combined_reasoning"]
+        best_content = routing_decision.get("best_content_match", {})
+
+        # Step 7: Create validation request instead of interrupt
+        validation_id = f"validation_{datetime.now().strftime('%Y%m%d_%H%M%S')}_{keyword.replace(' ', '_')}"
+
+        validation_data = {
+            "type": "routing_approval",
+            "keyword": keyword,
+            "selected_site": selected_site.name,
+            "routing_decision": routing_target,
+            "confidence_score": f"{confidence:.1%}",
+            "reasoning": reasoning,
+            "existing_content_found": best_content.get("content_found", False) if best_content else False,
+            "best_match_title": best_content.get("best_match", {}).get("title") if best_content and best_content.get(
+                "best_match") else None,
+            "question": f"Do you approve this routing decision for '{keyword}'?",
+            "options": ["yes", "no"]
+        }
+
+        # Store validation request
+        validation_info = {
+            "data": validation_data,
+            "status": "pending",
+            "created_at": datetime.now().isoformat(),
+            "keyword": keyword,
+            "routing_context": {
+                "selected_site": selected_site,
+                "routing_target": routing_target,
+                "confidence": confidence,
+                "reasoning": reasoning,
+                "best_content": best_content,
+                "keyword_data": keyword_data,
+                "internal_links": internal_links
+            }
+        }
+
+        # Store in the global variable
+        global _pending_validations
+        _pending_validations[validation_id] = validation_info
+
+        logger.info(f"📝 Validation stored in agent.py: {validation_id}")
+
+        logger.info(f"🔔 Validation required for '{keyword}' - ID: {validation_id}")
+        logger.info(f"   📍 Site: {selected_site.name}")
+        logger.info(f"   🎯 Decision: {routing_target}")
+        logger.info(f"   📊 Confidence: {confidence:.1%}")
+        logger.info(f"   🌐 Check: GET /pending-validations")
+        logger.info(
+            f"   ✅ Approve: POST /submit-validation {{\"validation_id\": \"{validation_id}\", \"response\": \"yes\"}}")
+        logger.info(
+            f"   ❌ Reject: POST /submit-validation {{\"validation_id\": \"{validation_id}\", \"response\": \"no\"}}")
+
+        # For now, return a pending response that includes validation info
+        return {
+            "success": False,  # Not completed yet
+            "routing_decision": None,
+            "payload": None,
+            "agent_response": None,
+            "validation_required": True,
+            "validation_id": validation_id,
+            "validation_data": validation_data,
+            "message": f"Human validation required. Use validation ID: {validation_id}",
+            "next_steps": {
+                "check_pending": "GET /pending-validations",
+                "submit_approval": f"POST /submit-validation with validation_id: {validation_id}"
+            }
+        }
+
+    except Exception as e:
+        logger.error(f"❌ Error in API-based HIL routing: {e}")
+        return {
+            "success": False,
+            "error": str(e),
+            "routing_decision": None,
+            "payload": None,
+            "agent_response": None
+        }
+
+
+# Keep the old function for backward compatibility
+async def process_content_finder_output_original(content_data: ContentFinderOutput) -> Dict[str, Any]:
+    """
+    UPDATED: Uses API-based HIL for container compatibility
+    """
+    keyword = content_data.get_primary_keyword()
+    logger.info(f"🎬 Starting API HIL routing for /route endpoint, keyword: '{keyword}'")
+
+    try:
+        # Use the API-based HIL version
+        result = await process_content_finder_output_with_api_hil(content_data)
+
+        # If validation is required, return special response
+        if result.get("validation_required"):
+            logger.info(f"⏸️ Validation required for '{keyword}' - ID: {result['validation_id']}")
+            return {
+                "success": False,
+                "error": "Human validation required",
+                "routing_decision": None,
+                "payload": None,
+                "validation_required": True,
+                "validation_id": result["validation_id"],
+                "message": result["message"]
+            }
+
+        return result
+
+    except Exception as e:
+        logger.error(f"❌ Error in API HIL routing for /route: {e}")
+        return {
+            "success": False,
+            "error": str(e),
+            "routing_decision": None,
+            "payload": None,
+            "agent_response": None
+        }
+
+
+async def process_content_finder_output_hil(content_data: ContentFinderOutput) -> Dict[str, Any]:
+    """Process content finder output with Human-in-the-Loop validation - NEW HIL VERSION"""
+    """Process content finder output with Human-in-the-Loop validation"""
+    keyword = content_data.get_primary_keyword()
+    logger.info(f"🎬 Starting Human-in-the-Loop routing for keyword: '{keyword}'")
+
+    try:
+        router_agent = create_human_in_the_loop_router_agent()
+        session_id = f"hil_router_{datetime.now().strftime('%Y%m%d_%H%M%S')}"
         config = {"configurable": {"thread_id": session_id}}
 
         initial_state = {
@@ -480,40 +1289,63 @@ async def process_content_finder_output(content_data: ContentFinderOutput) -> Di
             "confidence_score": None,
             "internal_linking_suggestions": None,
             "reasoning": None,
+            "keyword_data": None,
+            "analysis_complete": False,
+            "human_approval": None,
+            "final_action": None,
+            "rewriter_url": None,
             "output_payload": None,
-            "agent_response": None
+            "agent_response": None,
+            "process_stopped": False
         }
 
-        logger.info(f"🔄 Executing WordPress-based workflow (session: {session_id})")
+        logger.info(f"🔄 Executing Human-in-the-Loop workflow (session: {session_id})")
+
+        # The workflow will be interrupted multiple times for human input
+        # The client will need to resume with human responses
         result = router_agent.invoke(initial_state, config=config)
 
-        if result["routing_decision"] and result["output_payload"]:
-            logger.info(f"✅ WordPress-based routing successful: {result['routing_decision'].upper()}")
+        if result.get("process_stopped"):
+            logger.info("🛑 Process stopped by human choice")
+            return {
+                "success": True,
+                "routing_decision": "stopped",
+                "selected_site": None,
+                "confidence_score": 0,
+                "reasoning": "Process stopped by user",
+                "payload": None,
+                "agent_response": result.get("agent_response"),
+                "is_llm_powered": True,
+                "is_human_validated": True
+            }
+
+        if result.get("output_payload") and result.get("agent_response"):
+            logger.info(f"✅ Human-validated routing successful: {result.get('final_action', 'unknown').upper()}")
 
             return {
                 "success": True,
-                "routing_decision": result["routing_decision"],
-                "selected_site": SiteInfo(**result["selected_site"]),
-                "confidence_score": result["confidence_score"],
-                "reasoning": result["reasoning"],
+                "routing_decision": result.get("final_action"),
+                "selected_site": SiteInfo(**result["selected_site"]) if result.get("selected_site") else None,
+                "confidence_score": result.get("confidence_score"),
+                "reasoning": result.get("reasoning"),
                 "payload": OutputPayload(**result["output_payload"]),
-                "internal_linking_suggestions": result["internal_linking_suggestions"],
+                "internal_linking_suggestions": result.get("internal_linking_suggestions"),
                 "agent_response": result.get("agent_response"),
                 "is_llm_powered": True,
-                "is_streamlined": True
+                "is_human_validated": True
             }
         else:
             logger.error("❌ Workflow completed but missing outputs")
             return {
                 "success": False,
-                "error": "WordPress-based workflow failed - missing routing decision",
+                "error": "Human-validated workflow failed - missing outputs",
                 "routing_decision": None,
                 "payload": None,
                 "agent_response": None
             }
 
     except Exception as e:
-        logger.error(f"❌ Error in WordPress-based routing: {e}")
+        logger.error(f"❌ Error in Human-in-the-Loop routing: {e}")
         return {
             "success": False,
             "error": str(e),

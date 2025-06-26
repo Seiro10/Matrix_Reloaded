@@ -1,6 +1,6 @@
 """
-Updated models.py for Router Agent
-Added agent response fields and better compatibility
+Updated models.py for Router Agent with Human-in-the-Loop
+Added fields for human validation and interaction
 """
 
 from typing import Dict, List, Optional, Literal, Any
@@ -76,7 +76,7 @@ class OutputPayload(BaseModel):
 
 class RouterResponse(BaseModel):
     success: bool
-    routing_decision: Optional[Literal["copywriter", "rewriter"]] = None
+    routing_decision: Optional[Literal["copywriter", "rewriter", "stopped"]] = None
     selected_site: Optional[SiteInfo] = None
     confidence_score: Optional[float] = None
     reasoning: Optional[str] = None
@@ -86,6 +86,10 @@ class RouterResponse(BaseModel):
     # LLM-specific fields
     llm_reasoning: Optional[str] = None
     is_llm_powered: Optional[bool] = False
+    # Human validation fields
+    is_human_validated: Optional[bool] = False
+    human_approval: Optional[str] = None
+    final_action: Optional[str] = None
     # CSV file path
     csv_file: Optional[str] = None
     # Agent response
@@ -210,7 +214,7 @@ class ContentFinderOutput(BaseModel):
             return []
 
 
-# Internal State Models
+# Internal State Models with Human-in-the-Loop fields
 class RouterState(TypedDict):
     input_data: ContentFinderOutput
     selected_site: Optional[Dict[str, Any]]
@@ -219,11 +223,19 @@ class RouterState(TypedDict):
     confidence_score: Optional[float]
     internal_linking_suggestions: Optional[List[str]]
     reasoning: Optional[str]
+    keyword_data: Optional[Dict[str, Any]]
     output_payload: Optional[Dict[str, Any]]
     # LLM-specific state fields
     llm_reasoning: Optional[str]
     llm_confidence: Optional[float]
     serp_context: Optional[List[Dict[str, Any]]]
+    # Analysis completion flag
+    analysis_complete: Optional[bool]
+    # Human-in-the-Loop state fields
+    human_approval: Optional[str]  # "yes" or "no"
+    final_action: Optional[str]  # "rewriter", "copywriter", or "stop"
+    rewriter_url: Optional[str]  # URL provided by human for rewriter
+    process_stopped: Optional[bool]  # Flag if process was stopped by human
     # CSV file path
     csv_file: Optional[str]
     # Agent response

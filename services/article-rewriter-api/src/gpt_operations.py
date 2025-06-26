@@ -5,6 +5,9 @@ from dotenv import load_dotenv
 
 load_dotenv()
 
+for key in list(os.environ.keys()):
+    if 'proxy' in key.lower() or 'http_proxy' in key.lower():
+        del os.environ[key]
 
 def update_block_if_needed(block, subject, additional_content):
     """Update a single block if needed - EXACT logic from views2.py"""
@@ -61,7 +64,9 @@ Contenu additionnel :
     ]
 
     try:
-        client = openai.OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
+        client = openai.OpenAI(
+            api_key=os.getenv("OPENAI_API_KEY")
+        )
         response = client.chat.completions.create(
             model="gpt-4o",
             messages=prompt,
@@ -132,7 +137,9 @@ Contenu additionnel :
     ]
 
     try:
-        client = openai.OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
+        client = openai.OpenAI(
+            api_key=os.getenv("OPENAI_API_KEY")
+        )
         res = client.chat.completions.create(model="gpt-4o", messages=prompt, max_tokens=1000)
         memory["diagnostic"] = res.choices[0].message.content.strip()
     except Exception as e:
@@ -187,7 +194,9 @@ Contenu additionnel :
     ]
 
     try:
-        client = openai.OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
+        client = openai.OpenAI(
+            api_key=os.getenv("OPENAI_API_KEY")
+        )
         res = client.chat.completions.create(
             model="gpt-4o",
             messages=prompt,
