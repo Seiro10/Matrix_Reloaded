@@ -24,7 +24,7 @@ from tools import (
 from config import WEBSITES
 from models import RouterState, ContentFinderOutput, SiteInfo, RoutingMetadata, OutputPayload
 from langgraph.graph import StateGraph, START, END
-
+from storage import pending_validations as _pending_validations
 logger = logging.getLogger(__name__)
 
 # Configuration for agent services
@@ -36,30 +36,76 @@ def call_metadata_generator_sync(csv_file_path: str, keyword: str) -> Dict[str, 
     """Synchronous call to the Metadata Generator API with CSV file"""
     try:
         logger.info(f"🔄 Calling Metadata Generator for keyword: {keyword}")
+        logger.info(f"📁 CSV file: {csv_file_path}")
+
+        # Verify file exists before sending
+        if not os.path.exists(csv_file_path):
+            logger.error(f"❌ CSV file not found: {csv_file_path}")
+            return {
+                "success": False,
+                "error": f"CSV file not found: {csv_file_path}",
+                "metadata_response": None
+            }
+
+        # Check file size
+        file_size = os.path.getsize(csv_file_path)
+        logger.info(f"📊 CSV file size: {file_size} bytes")
 
         with open(csv_file_path, 'rb') as f:
             files = {'file': (os.path.basename(csv_file_path), f, 'text/csv')}
+
+            logger.info(f"🌐 Calling: {METADATA_GENERATOR_URL}/generate-metadata")
+
             response = requests.post(
                 f"{METADATA_GENERATOR_URL}/generate-metadata",
                 files=files,
-                timeout=30
+                timeout=60  # Increased timeout
             )
+
+        logger.info(f"📡 Response status: {response.status_code}")
+        logger.info(f"📝 Response headers: {dict(response.headers)}")
+
         if response.status_code == 200:
-            result = response.json()
-            logger.info(f"✅ Metadata Generator called successfully")
-            return {
-                "success": True,
-                "message": result.get("message"),
-                "metadata_response": result
-            }
+            try:
+                result = response.json()
+                logger.info(f"✅ Metadata Generator called successfully")
+                logger.info(f"📋 Response keys: {list(result.keys())}")
+                return {
+                    "success": True,
+                    "message": result.get("message", "Metadata generated successfully"),
+                    "metadata_response": result
+                }
+            except json.JSONDecodeError as e:
+                logger.error(f"❌ Invalid JSON response: {e}")
+                logger.error(f"❌ Raw response: {response.text[:500]}...")
+                return {
+                    "success": False,
+                    "error": f"Invalid JSON response: {e}",
+                    "metadata_response": None
+                }
         else:
             logger.error(f"❌ Metadata Generator call failed: {response.status_code}")
+            logger.error(f"❌ Response text: {response.text[:500]}...")
             return {
                 "success": False,
                 "error": f"HTTP {response.status_code}: {response.text}",
                 "metadata_response": None
             }
 
+    except requests.exceptions.Timeout:
+        logger.error(f"❌ Timeout calling Metadata Generator")
+        return {
+            "success": False,
+            "error": "Timeout calling metadata generator service",
+            "metadata_response": None
+        }
+    except requests.exceptions.ConnectionError:
+        logger.error(f"❌ Connection error to Metadata Generator at {METADATA_GENERATOR_URL}")
+        return {
+            "success": False,
+            "error": f"Cannot connect to metadata generator at {METADATA_GENERATOR_URL}",
+            "metadata_response": None
+        }
     except Exception as e:
         logger.error(f"❌ Error calling Metadata Generator: {e}")
         return {
@@ -79,7 +125,7 @@ def create_csv_for_metadata_generator(keyword: str, keyword_data: Dict[str, Any]
         temp_file = tempfile.NamedTemporaryFile(mode='w', delete=False, suffix='.csv', encoding='utf-8')
         writer = csv.writer(temp_file)
 
-        # Write header - MUST match exactly what metadata generator expects
+        # FIXED: Header must match exactly what metadata generator expects
         header = [
             'KW', 'competition', 'Site', 'language', 'confidence', 'monthly_searches',
             'people_also_ask', 'forum',
@@ -89,52 +135,53 @@ def create_csv_for_metadata_generator(keyword: str, keyword_data: Dict[str, Any]
         ]
         writer.writerow(header)
 
-        # Prepare data
+        # Prepare data with safe defaults
         organic_results = keyword_data.get('organic_results', [])
-        people_also_ask = '; '.join(keyword_data.get('people_also_ask', []))
-        forum_data = '; '.join(keyword_data.get('forum', []))
+        people_also_ask = keyword_data.get('people_also_ask', [])
+        forum_data = keyword_data.get('forum', [])
 
-        # Prepare SERP results (up to 3) - only include if URL exists
+        # Convert lists to semicolon-separated strings
+        people_also_ask_str = '; '.join(people_also_ask) if people_also_ask else ''
+        forum_data_str = '; '.join(forum_data) if forum_data else ''
+
+        # Prepare SERP results (up to 3) - with safe defaults
         serp_data = {}
         for i in range(1, 4):  # positions 1-3
             if i <= len(organic_results):
                 result = organic_results[i - 1]
-                # Only include if URL exists (as per metadata generator logic)
-                if result.get('url'):
-                    serp_data[f'position{i}'] = result.get('position', i)
-                    serp_data[f'title{i}'] = result.get('title', '')
-                    serp_data[f'url{i}'] = result.get('url', '')
-                    serp_data[f'snippet{i}'] = result.get('snippet', '')
-                    serp_data[f'content{i}'] = result.get('content', '')
-                    serp_data[f'structure{i}'] = result.get('structure', '')
-                    # Handle headlines - convert list to semicolon-separated string
-                    headlines = result.get('headlines', [])
-                    if isinstance(headlines, list):
-                        serp_data[f'headlines{i}'] = '; '.join(headlines)
-                    else:
-                        serp_data[f'headlines{i}'] = str(headlines) if headlines else ''
-                    serp_data[f'metadescription{i}'] = result.get('metadescription', '')
+
+                # Safe data extraction with defaults
+                serp_data[f'position{i}'] = result.get('position', i)
+                serp_data[f'title{i}'] = result.get('title', '')
+                serp_data[f'url{i}'] = result.get('url', '')
+                serp_data[f'snippet{i}'] = result.get('snippet', '')
+                serp_data[f'content{i}'] = result.get('content', '')
+                serp_data[f'structure{i}'] = result.get('structure', '')
+
+                # Handle headlines - convert list to semicolon-separated string
+                headlines = result.get('headlines', [])
+                if isinstance(headlines, list):
+                    serp_data[f'headlines{i}'] = '; '.join(str(h) for h in headlines)
                 else:
-                    # Empty data for missing URLs
-                    for field in ['position', 'title', 'url', 'snippet', 'content', 'structure', 'headlines',
-                                  'metadescription']:
-                        serp_data[f'{field}{i}'] = ''
+                    serp_data[f'headlines{i}'] = str(headlines) if headlines else ''
+
+                serp_data[f'metadescription{i}'] = result.get('metadescription', '')
             else:
                 # Empty data for missing results
                 for field in ['position', 'title', 'url', 'snippet', 'content', 'structure', 'headlines',
                               'metadescription']:
                     serp_data[f'{field}{i}'] = ''
 
-        # Write data row - MUST match header order exactly
+        # Write data row - FIXED: Must match header order exactly
         row = [
             keyword,  # KW
             keyword_data.get('competition', 'UNKNOWN'),  # competition
             site_info.get('name', ''),  # Site
-            'FR',  # language - default to FR as expected by metadata generator
-            f"{0.80:.2f}",  # confidence - format as string with 2 decimals
+            'FR',  # language - default to FR
+            '0.80',  # confidence - fixed format
             keyword_data.get('monthly_searches', 0),  # monthly_searches
-            people_also_ask,  # people_also_ask
-            forum_data,  # forum
+            people_also_ask_str,  # people_also_ask
+            forum_data_str,  # forum
             # Competitor 1
             serp_data.get('position1', ''), serp_data.get('title1', ''), serp_data.get('url1', ''),
             serp_data.get('snippet1', ''), serp_data.get('content1', ''), serp_data.get('structure1', ''),
@@ -151,15 +198,36 @@ def create_csv_for_metadata_generator(keyword: str, keyword_data: Dict[str, Any]
         writer.writerow(row)
 
         temp_file.close()
-        logger.info(f"✅ Created CSV for metadata generator: {temp_file.name}")
-        logger.info(f"   📊 Keyword: {keyword}")
-        logger.info(f"   🏢 Site: {site_info.get('name', 'Unknown')}")
-        logger.info(
-            f"   🔗 Competitors with URLs: {len([url for url in [serp_data.get(f'url{i}') for i in range(1, 4)] if url])}")
-        return temp_file.name
+
+        # Verify file was created properly
+        if os.path.exists(temp_file.name):
+            file_size = os.path.getsize(temp_file.name)
+            logger.info(f"✅ Created CSV for metadata generator: {temp_file.name}")
+            logger.info(f"   📊 Keyword: {keyword}")
+            logger.info(f"   🏢 Site: {site_info.get('name', 'Unknown')}")
+            logger.info(f"   📁 File size: {file_size} bytes")
+            logger.info(
+                f"   🔗 Competitors with URLs: {len([url for url in [serp_data.get(f'url{i}') for i in range(1, 4)] if url])}")
+
+            # Log first few lines for debugging
+            with open(temp_file.name, 'r', encoding='utf-8') as f:
+                lines = f.readlines()
+                logger.info(f"   📋 CSV has {len(lines)} lines")
+                if len(lines) > 0:
+                    logger.info(f"   📄 Header: {lines[0].strip()}")
+                if len(lines) > 1:
+                    logger.info(f"   📄 Data: {lines[1][:100]}...")
+
+            return temp_file.name
+        else:
+            logger.error(f"❌ CSV file was not created: {temp_file.name}")
+            return None
 
     except Exception as e:
         logger.error(f"❌ Error creating CSV for metadata generator: {e}")
+        logger.error(f"❌ Exception type: {type(e)}")
+        import traceback
+        logger.error(f"❌ Traceback: {traceback.format_exc()}")
         return None
 
 
@@ -1189,8 +1257,6 @@ async def process_content_finder_output_with_api_hil(content_data: ContentFinder
             }
         }
 
-        # Store in the global variable
-        global _pending_validations
         _pending_validations[validation_id] = validation_info
 
         logger.info(f"📝 Validation stored in agent.py: {validation_id}")

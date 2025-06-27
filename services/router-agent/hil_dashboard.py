@@ -233,16 +233,24 @@ class HILDashboard:
                     result = await self.continue_workflow(validation_id)
 
                     if "validation_required" in result:
-                        # Another validation needed
+                        # Another validation needed (no good URL found)
                         new_validation_id = result["validation_id"]
                         self.log(f"⏳ Nouvelle validation requise: {new_validation_id}", 'YELLOW')
                         # The monitoring loop will pick this up
+                    elif result.get("auto_executed"):
+                        # Workflow was auto-executed with suggested URL
+                        self.log("✅ Workflow exécuté automatiquement avec URL suggérée!", 'GREEN')
+
+                        agent_response = result.get("agent_response", {})
+                        if agent_response and agent_response.get("success"):
+                            self.log(f"📝 Réponse agent: {agent_response.get('message', 'N/A')}", 'CYAN')
+                        elif agent_response:
+                            self.log(f"⚠️ Erreur agent: {agent_response.get('error', 'N/A')}", 'YELLOW')
                     else:
+                        # Normal completion
                         self.log("✅ Workflow terminé", 'GREEN')
                 else:
                     self.log("🛑 Processus arrêté par l'utilisateur", 'RED')
-            else:
-                self.log("❌ Erreur lors de l'envoi de la réponse", 'RED')
 
         elif data["type"] == "action_choice":
             # Ask for action choice

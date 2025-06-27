@@ -13,7 +13,7 @@ from pydantic import BaseModel, Field
 # Add src directory to Python path
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
-from database import ContentDatabase
+# REMOVED: from database import ContentDatabase
 
 logger = logging.getLogger(__name__)
 
@@ -264,40 +264,29 @@ Overall confidence: {overall_confidence:.1%}
 
 @tool
 def generate_internal_links(keyword: str, site_id: int, niche: str) -> List[str]:
-    """Generate internal linking suggestions"""
-    db = ContentDatabase()
+    """Generate internal linking suggestions - SIMPLIFIED without database"""
     suggestions = []
 
-    try:
-        articles = db.get_articles_by_site(site_id, limit=20)
-        keyword_parts = [part.lower() for part in keyword.split() if len(part) > 2]
+    # Generate niche-based suggestions without database
+    niche_suggestions = {
+        "gaming": [
+            f"Guide d'achat gaming pour '{keyword}' - Guide complet matériel",
+            f"Tests hardware '{keyword}' - Reviews et comparatifs",
+            f"Actualités gaming '{keyword}' - News et tendances",
+            f"Tutos gaming '{keyword}' - Guides pratiques",
+            f"Communauté gaming '{keyword}' - Forum et discussions"
+        ],
+        "motivation": [
+            f"Développement personnel '{keyword}' - Guides pratiques",
+            f"Techniques motivation '{keyword}' - Méthodes éprouvées",
+            f"Success stories '{keyword}' - Témoignages inspirants",
+            f"Coaching '{keyword}' - Accompagnement personnalisé",
+            f"Mindset '{keyword}' - État d'esprit gagnant"
+        ]
+    }
 
-        for article in articles:
-            article_text = f"{article['title']} {article['keywords']}".lower()
-            relevance_score = sum(1 for part in keyword_parts if part in article_text)
-            if relevance_score > 0:
-                suggestion = f"{article['title']} - {article['url']}"
-                if suggestion not in suggestions:
-                    suggestions.append(suggestion)
-    except Exception as e:
-        logger.error(f"Database query error: {e}")
+    if niche in niche_suggestions:
+        suggestions.extend(niche_suggestions[niche])
 
-    # Add niche-based fallbacks
-    if len(suggestions) < 3:
-        niche_suggestions = {
-            "gaming": [
-                "Guide d'achat gaming - Guide complet matériel",
-                "Tests hardware - Reviews et comparatifs",
-                "Actualités gaming - News et tendances"
-            ],
-            "motivation": [
-                "Développement personnel - Guides pratiques",
-                "Techniques motivation - Méthodes éprouvées",
-                "Success stories - Témoignages inspirants"
-            ]
-        }
-        if niche in niche_suggestions:
-            suggestions.extend(niche_suggestions[niche])
-
-    logger.info(f"🔗 Generated {len(suggestions[:5])} internal link suggestions")
+    logger.info(f"🔗 Generated {len(suggestions[:5])} internal link suggestions for {niche}")
     return suggestions[:5]
