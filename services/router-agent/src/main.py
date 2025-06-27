@@ -16,6 +16,7 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 # Change relative imports to absolute imports
 from models import ContentFinderOutput, RouterResponse
 from agent import create_human_in_the_loop_router_agent
+from storage import pending_validations, active_workflows
 
 # Configure logging
 logging.basicConfig(
@@ -39,10 +40,6 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
-
-# Store active workflows in memory (in production, use a proper database)
-active_workflows: Dict[str, Any] = {}
-
 
 class StartWorkflowRequest(BaseModel):
     content_data: ContentFinderOutput
@@ -328,23 +325,6 @@ async def cancel_workflow(session_id: str):
     }
 
 
-# Global storage for pending validations
-pending_validations: Dict[str, Any] = {}
-
-
-def store_validation(validation_id: str, validation_data: Dict[str, Any]):
-    """Store a validation in the global pending_validations"""
-    global pending_validations
-    pending_validations[validation_id] = validation_data
-    logger.info(f"📝 Stored validation: {validation_id}")
-
-
-# Make this function available to agent.py
-import agent
-
-agent.store_validation_func = store_validation
-
-
 class ValidationRequest(BaseModel):
     validation_id: str
     response: str  # "yes"/"no" for approval, "rewriter"/"copywriter"/"stop" for action, or URL
@@ -353,25 +333,45 @@ class ValidationRequest(BaseModel):
 @app.post("/route", response_model=RouterResponse)
 async def route_content(content_data: ContentFinderOutput):
     """
-    Route endpoint with human validation via API calls instead of terminal interrupts
+    Route endpoint with API-based Human-in-the-Loop for Docker/container environments
+    Creates validation requests that can be handled via the dashboard or API calls
     """
     try:
         keyword = content_data.get_primary_keyword()
-        logger.info(f"Processing routing request with HIL for keyword: {keyword}")
+        logger.info(f"🚀 Processing routing request with API-based HIL for keyword: {keyword}")
 
-        # Use the HIL workflow but handle interrupts via API
+        # Use the API-based HIL that creates validation requests
         from agent import process_content_finder_output_with_api_hil
         result = await process_content_finder_output_with_api_hil(content_data)
 
-        if result["success"]:
-            logger.info(f"Routing successful: {result['routing_decision']}")
+        if result.get("validation_required"):
+            # Validation is pending - return info for dashboard/API interaction
+            validation_id = result["validation_id"]
+            logger.info(f"⏸️ Validation required for '{keyword}' - ID: {validation_id}")
+            logger.info("🎛️ Use the HIL dashboard or API endpoints to respond")
+
+            return RouterResponse(
+                success=False,  # Not completed yet
+                routing_decision=None,
+                selected_site=None,
+                confidence_score=None,
+                reasoning="Human validation required",
+                payload=None,
+                error=f"Human validation required. Validation ID: {validation_id}",
+                is_llm_powered=True,
+                is_human_validated=False
+            )
+        elif result.get("success"):
+            # Workflow completed successfully
+            logger.info(f"✅ Routing successful: {result['routing_decision']}")
             return RouterResponse(**result)
         else:
-            logger.error(f"Routing failed: {result['error']}")
-            raise HTTPException(status_code=500, detail=result["error"])
+            # Workflow failed
+            logger.error(f"❌ Routing failed: {result.get('error', 'Unknown error')}")
+            raise HTTPException(status_code=500, detail=result.get("error", "Unknown routing error"))
 
     except Exception as e:
-        logger.error(f"Route endpoint error: {e}")
+        logger.error(f"❌ Route endpoint error: {e}")
         raise HTTPException(status_code=500, detail=str(e))
 
 
@@ -442,46 +442,123 @@ async def continue_workflow(validation_id: str):
                 "is_human_validated": True
             }
 
-        # Human approved, now ask for action choice
+        # Human approved! Check if we have a good URL to use automatically
         best_content = routing_context["best_content"]
-        options = ["copywriter", "stop"]
-        if best_content and best_content.get("content_found"):
-            options.insert(0, "rewriter")
 
-        # Create action choice validation
-        action_validation_id = f"action_{datetime.now().strftime('%Y%m%d_%H%M%S')}_{keyword.replace(' ', '_')}"
+        if best_content and best_content.get("content_found") and best_content.get("best_match", {}).get("url"):
+            # ✅ We have a suggested URL - execute rewriter directly!
+            suggested_url = best_content["best_match"]["url"]
+            logger.info(f"✅ Human approved - executing rewriter automatically with: {suggested_url}")
 
-        action_validation_data = {
-            "type": "action_choice",
-            "keyword": keyword,
-            "question": "What action would you like to take?",
-            "options": options,
-            "existing_content": best_content
-        }
+            # Copy the logic from your existing /execute-action but execute directly
+            selected_site = routing_context["selected_site"]
+            confidence = routing_context["confidence"]
+            reasoning = routing_context["reasoning"]
+            keyword_data = routing_context["keyword_data"]
+            internal_links = routing_context["internal_links"]
 
-        pending_validations[action_validation_id] = {
-            "data": action_validation_data,
-            "status": "pending",
-            "created_at": datetime.now().isoformat(),
-            "keyword": keyword,
-            "routing_context": routing_context,
-            "parent_validation": validation_id
-        }
+            # Call rewriter directly
+            from agent import build_additional_content, call_rewriter_agent_json
+            additional_content = build_additional_content(keyword_data)
 
-        # Clean up original validation
-        del pending_validations[validation_id]
+            print(f"\n🔄 AUTO-CALLING REWRITER AGENT")
+            print(f"Keyword: {keyword}")
+            print(f"Site: {selected_site.name}")
+            print(f"URL: {suggested_url}")
+            print("=" * 50)
 
-        logger.info(f"🎯 Action choice required for '{keyword}' - ID: {action_validation_id}")
-        logger.info(f"   Options: {', '.join(options)}")
+            agent_response = call_rewriter_agent_json(suggested_url, keyword, additional_content)
 
-        return {
-            "success": False,  # Still pending
-            "validation_required": True,
-            "validation_id": action_validation_id,
-            "validation_data": action_validation_data,
-            "message": f"Action choice required. Use validation ID: {action_validation_id}",
-            "step": "action_choice"
-        }
+            # Create final response (same as your execute-action)
+            from models import SiteInfo, OutputPayload, RoutingMetadata
+
+            output_payload = {
+                "agent_target": "rewriter",
+                "keyword": keyword,
+                "site_config": SiteInfo(
+                    site_id=selected_site.site_id,
+                    name=selected_site.name,
+                    domain=selected_site.domain,
+                    niche=selected_site.niche,
+                    theme=selected_site.theme,
+                    language=selected_site.language,
+                    sitemap_url=selected_site.sitemap_url,
+                    wordpress_api_url=selected_site.wordpress_api_url
+                ),
+                "serp_analysis": routing_context.get("serp_analysis"),
+                "similar_keywords": routing_context.get("similar_keywords", []),
+                "internal_linking_suggestions": internal_links,
+                "routing_metadata": RoutingMetadata(
+                    confidence_score=confidence,
+                    content_source="wordpress_api",
+                    timestamp=datetime.now().isoformat()
+                ),
+                "existing_content": best_content,
+                "llm_reasoning": reasoning,
+                "agent_response": agent_response
+            }
+
+            # Clean up validation
+            del pending_validations[validation_id]
+
+            logger.info(f"✅ Auto-execution completed successfully: REWRITER")
+
+            return {
+                "success": True,
+                "routing_decision": "rewriter",
+                "selected_site": SiteInfo(**selected_site.__dict__),
+                "confidence_score": confidence,
+                "reasoning": reasoning,
+                "payload": OutputPayload(**output_payload),
+                "internal_linking_suggestions": internal_links,
+                "agent_response": agent_response,
+                "is_llm_powered": True,
+                "is_human_validated": True,
+                "auto_executed": True  # Flag to show it was auto-executed
+            }
+
+        else:
+            # No good URL found, fall back to asking for action choice (your original logic)
+            logger.info("⚠️ No suitable URL found, asking for action choice")
+
+            # Human approved, now ask for action choice (your existing logic)
+            options = ["copywriter", "stop"]
+            if best_content and best_content.get("content_found"):
+                options.insert(0, "rewriter")  # Put rewriter first if content exists
+
+            # Create action choice validation (your existing logic)
+            action_validation_id = f"action_{datetime.now().strftime('%Y%m%d_%H%M%S')}_{keyword.replace(' ', '_')}"
+
+            action_validation_data = {
+                "type": "action_choice",
+                "keyword": keyword,
+                "question": "What action would you like to take?",
+                "options": options,
+                "existing_content": best_content
+            }
+
+            pending_validations[action_validation_id] = {
+                "data": action_validation_data,
+                "status": "pending",
+                "created_at": datetime.now().isoformat(),
+                "keyword": keyword,
+                "routing_context": routing_context,
+                "parent_validation": validation_id
+            }
+
+            # Clean up original validation
+            del pending_validations[validation_id]
+
+            logger.info(f"🎯 Action choice required for '{keyword}' - ID: {action_validation_id}")
+
+            return {
+                "success": False,  # Still pending
+                "validation_required": True,
+                "validation_id": action_validation_id,
+                "validation_data": action_validation_data,
+                "message": f"Action choice required. Use validation ID: {action_validation_id}",
+                "step": "action_choice"
+            }
 
     except Exception as e:
         logger.error(f"❌ Error continuing workflow: {e}")

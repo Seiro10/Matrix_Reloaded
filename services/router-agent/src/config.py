@@ -44,15 +44,13 @@ WEBSITES = [
 class Settings:
     def __init__(self):
         self.openai_api_key = os.getenv("OPENAI_API_KEY")
-        self.anthropic_api_key = os.getenv("ANTHROPIC_API_KEY")  # Added for Claude
+        self.anthropic_api_key = os.getenv("ANTHROPIC_API_KEY")
         self.project_id = os.getenv("PROJECT_ID")
         self.environment = os.getenv("ENVIRONMENT", "development")
-        # Fix the database path
-        self.db_path = os.getenv("DB_PATH", "./data/content_db.sqlite")
         self.port = int(os.getenv("PORT", 8080))
 
-        # UPDATED: Service URLs for rewriter-main
-        self.rewriter_agent_url = os.getenv("REWRITER_AGENT_URL", "http://localhost:8085")  # Changed to 8085
+        # Service URLs for agent communication
+        self.rewriter_agent_url = os.getenv("REWRITER_AGENT_URL", "http://localhost:8085")
         self.metadata_generator_url = os.getenv("METADATA_GENERATOR_URL", "http://localhost:8084")
 
         # Validation
