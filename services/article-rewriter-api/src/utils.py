@@ -32,9 +32,14 @@ def extract_html_blocks(html_content):
     ]
 
     content_root = soup.find('article') or soup
+    processed_elements = set()  # Track processed elements
 
     for elem in content_root.descendants:
-        if not getattr(elem, 'name', None):
+        if not getattr(elem, 'name', None) or elem in processed_elements:
+            continue
+
+        # Check if this element is already contained in a processed parent
+        if any(elem in parent.descendants for parent in processed_elements if hasattr(parent, 'descendants')):
             continue
 
         # Titres : on découpe
@@ -43,19 +48,35 @@ def extract_html_blocks(html_content):
                 blocks.append({'title': current_title, 'content': current_block})
                 current_block = []
             current_title = elem
+            processed_elements.add(elem)
+
+        # For figures, add the entire figure and mark all its children as processed
+        elif elem.name == 'figure':
+            current_block.append(elem)
+            processed_elements.add(elem)
+            processed_elements.update(elem.find_all())
 
         # Contenu riche
         elif elem.name in content_tags:
+            # Skip if this element is already inside a processed figure
+            if elem.find_parent('figure') and elem.find_parent('figure') in processed_elements:
+                continue
+
             # Garde les div/section spécifiques (affiliate, shortcode, citation, etc.)
             cls = elem.get('class', [])
             if isinstance(cls, str):
                 cls = [cls]
             if any(c for c in cls if c in keep_classes):
                 current_block.append(elem)
+                processed_elements.add(elem)
 
             # Contenu classique
-            elif elem.name in ['p', 'ul', 'ol', 'img', 'blockquote', 'figure']:
+            elif elem.name in ['p', 'ul', 'ol', 'img', 'blockquote']:
+                # Only add img if not already in a figure
+                if elem.name == 'img' and elem.find_parent('figure'):
+                    continue
                 current_block.append(elem)
+                processed_elements.add(elem)
 
     if current_block:
         blocks.append({'title': current_title, 'content': current_block})
@@ -87,9 +108,35 @@ def strip_duplicate_title_and_featured_image(html):
     main_img = soup.find('img', class_="wp-post-image")
     if main_img:
         print("[CLEAN] 🖼️ Image principale supprimée")
-        main_img.decompose()
+        # Remove the entire figure if it only contains the main image
+        figure_parent = main_img.find_parent('figure')
+        if figure_parent and len(figure_parent.find_all(['img', 'video'])) == 1:
+            print("[CLEAN] 🖼️ Figure avec image principale supprimée")
+            figure_parent.decompose()
+        else:
+            main_img.decompose()
     else:
         print("[CLEAN] ℹ️ Aucune image wp-post-image trouvée à supprimer")
+
+    # Also remove any figure that contains featured image classes or is the first large image
+    featured_figures = soup.find_all('figure', class_=['wp-block-image', 'aligncenter', 'size-full'])
+    for figure in featured_figures:
+        img = figure.find('img')
+        if img and (
+                'wp-post-image' in img.get('class', []) or 'featured' in img.get('class', []) or 'size-full' in img.get(
+                'class', [])):
+            print("[CLEAN] 🖼️ Figure avec image principale supprimée")
+            figure.decompose()
+            break  # Only remove the first featured image
+
+    # If no wp-post-image found, remove the first figure with a large image (likely the featured image)
+    if not main_img:
+        first_figure = soup.find('figure', class_='wp-block-image')
+        if first_figure:
+            img = first_figure.find('img')
+            if img:
+                print("[CLEAN] 🖼️ Première figure (probablement image principale) supprimée")
+                first_figure.decompose()
 
     return str(soup)
 
