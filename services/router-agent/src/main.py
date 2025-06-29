@@ -9,13 +9,19 @@ import logging
 import os
 import sys
 from datetime import datetime
-from typing import Optional, Dict, Any
+from typing import Optional, Dict, Any, List 
 
-# Add src directory to Python path for imports
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-# Change relative imports to absolute imports
-from models import ContentFinderOutput, RouterResponse
-from agent import create_human_in_the_loop_router_agent
+
+from models import ContentFinderOutput, RouterResponse, SiteInfo, OutputPayload, RoutingMetadata, SERPAnalysis, SimilarKeyword
+
+from agent import (
+    create_human_in_the_loop_router_agent,
+    build_additional_content,
+    call_rewriter_agent_json,
+    create_csv_for_metadata_generator,
+    call_metadata_generator_sync
+) 
 from storage import pending_validations, active_workflows
 
 # Configure logging
@@ -429,48 +435,322 @@ async def continue_workflow(validation_id: str):
     try:
         logger.info(f"▶️ Continuing workflow for {keyword} with response: {human_response}")
 
-        if human_response != "yes":
-            logger.info("❌ Human disapproved routing decision - stopping process")
+        # Handle routing approval response
+        if validation_info["data"]["type"] == "routing_approval":
+            if human_response == "yes":
+                # Human approved! Check if we have a good URL to use automatically
+                best_content = routing_context["best_content"]
 
-            # Clean up validation
-            del pending_validations[validation_id]
+                if best_content and best_content.get("content_found") and best_content.get("best_match", {}).get("url"):
+                    # ✅ We have a suggested URL - execute rewriter directly!
+                    suggested_url = best_content["best_match"]["url"]
+                    logger.info(f"✅ Human approved - executing rewriter automatically with: {suggested_url}")
 
-            return {
-                "success": True,
-                "routing_decision": "stopped",
-                "message": "Process stopped - routing decision not approved",
-                "is_human_validated": True
-            }
+                    # Execute rewriter directly (existing logic)
+                    selected_site = routing_context["selected_site"]
+                    confidence = routing_context["confidence"]
+                    reasoning = routing_context["reasoning"]
+                    keyword_data = routing_context["keyword_data"]
+                    internal_links = routing_context["internal_links"]
 
-        # Human approved! Check if we have a good URL to use automatically
-        best_content = routing_context["best_content"]
+                    from agent import build_additional_content, call_rewriter_agent_json
+                    additional_content = build_additional_content(keyword_data)
 
-        if best_content and best_content.get("content_found") and best_content.get("best_match", {}).get("url"):
-            # ✅ We have a suggested URL - execute rewriter directly!
-            suggested_url = best_content["best_match"]["url"]
-            logger.info(f"✅ Human approved - executing rewriter automatically with: {suggested_url}")
+                    print(f"\n🔄 AUTO-CALLING REWRITER AGENT")
+                    print(f"Keyword: {keyword}")
+                    print(f"Site: {selected_site.name}")
+                    print(f"URL: {suggested_url}")
+                    print("=" * 50)
 
-            # Copy the logic from your existing /execute-action but execute directly
+                    agent_response = call_rewriter_agent_json(suggested_url, keyword, additional_content)
+
+                    # Create final response
+                    from models import SiteInfo, OutputPayload, RoutingMetadata
+
+                    output_payload = {
+                        "agent_target": "rewriter",
+                        "keyword": keyword,
+                        "site_config": SiteInfo(
+                            site_id=selected_site.site_id,
+                            name=selected_site.name,
+                            domain=selected_site.domain,
+                            niche=selected_site.niche,
+                            theme=selected_site.theme,
+                            language=selected_site.language,
+                            sitemap_url=selected_site.sitemap_url,
+                            wordpress_api_url=selected_site.wordpress_api_url
+                        ),
+                        "serp_analysis": routing_context.get("serp_analysis"),
+                        "similar_keywords": routing_context.get("similar_keywords", []),
+                        "internal_linking_suggestions": internal_links,
+                        "routing_metadata": RoutingMetadata(
+                            confidence_score=confidence,
+                            content_source="wordpress_api",
+                            timestamp=datetime.now().isoformat()
+                        ),
+                        "existing_content": best_content,
+                        "llm_reasoning": reasoning,
+                        "agent_response": agent_response
+                    }
+
+                    # Clean up validation
+                    del pending_validations[validation_id]
+
+                    logger.info(f"✅ Auto-execution completed successfully: REWRITER")
+
+                    return {
+                        "success": True,
+                        "routing_decision": "rewriter",
+                        "selected_site": SiteInfo(**selected_site.__dict__),
+                        "confidence_score": confidence,
+                        "reasoning": reasoning,
+                        "payload": OutputPayload(**output_payload),
+                        "internal_linking_suggestions": internal_links,
+                        "agent_response": agent_response,
+                        "is_llm_powered": True,
+                        "is_human_validated": True,
+                        "auto_executed": True
+                    }
+
+                else:
+                    # No good URL found, ask for action choice
+                    logger.info("⚠️ No suitable URL found, asking for action choice")
+
+                    choice_validation_id = f"choice_{datetime.now().strftime('%Y%m%d_%H%M%S')}_{keyword.replace(' ', '_')}"
+
+                    choice_validation_data = {
+                        "type": "action_choice",
+                        "keyword": keyword,
+                        "question": "What action would you like to take?",
+                        "options": ["rewriter", "copywriter", "stop"]
+                    }
+
+                    pending_validations[choice_validation_id] = {
+                        "data": choice_validation_data,
+                        "status": "pending",
+                        "created_at": datetime.now().isoformat(),
+                        "keyword": keyword,
+                        "routing_context": routing_context,
+                        "parent_validation": validation_id
+                    }
+
+                    # Clean up original validation
+                    del pending_validations[validation_id]
+
+                    logger.info(f"🎯 Action choice required for '{keyword}' - ID: {choice_validation_id}")
+
+                    return {
+                        "success": False,
+                        "validation_required": True,
+                        "validation_id": choice_validation_id,
+                        "validation_data": choice_validation_data,
+                        "message": f"Action choice required. Use validation ID: {choice_validation_id}",
+                        "step": "action_choice"
+                    }
+
+            else:  # human_response == "no"
+                # NEW: Human disagreed with routing, offer 3 choices
+                logger.info("❌ Human disagreed with routing decision - offering alternative choices")
+
+                choice_validation_id = f"choice_{datetime.now().strftime('%Y%m%d_%H%M%S')}_{keyword.replace(' ', '_')}"
+
+                choice_validation_data = {
+                    "type": "action_choice",
+                    "keyword": keyword,
+                    "question": "You disagreed with the routing decision. What would you like to do instead?",
+                    "options": ["rewriter", "copywriter", "stop"]
+                }
+
+                pending_validations[choice_validation_id] = {
+                    "data": choice_validation_data,
+                    "status": "pending",
+                    "created_at": datetime.now().isoformat(),
+                    "keyword": keyword,
+                    "routing_context": routing_context,
+                    "parent_validation": validation_id
+                }
+
+                # Clean up original validation
+                del pending_validations[validation_id]
+
+                logger.info(f"🎯 Alternative action choice for '{keyword}' - ID: {choice_validation_id}")
+
+                return {
+                    "success": False,
+                    "validation_required": True,
+                    "validation_id": choice_validation_id,
+                    "validation_data": choice_validation_data,
+                    "message": f"Alternative action choice required. Use validation ID: {choice_validation_id}",
+                    "step": "action_choice"
+                }
+
+        # Handle action choice response
+        elif validation_info["data"]["type"] == "action_choice":
+            action_choice = human_response
+
+            if action_choice == "stop":
+                # Clean up validation
+                del pending_validations[validation_id]
+
+                return {
+                    "success": True,
+                    "routing_decision": "stopped",
+                    "message": "Process stopped by user request",
+                    "is_human_validated": True
+                }
+
+            elif action_choice == "copywriter":
+                # Execute copywriter path
+                selected_site = routing_context["selected_site"]
+                confidence = routing_context["confidence"]
+                reasoning = routing_context["reasoning"]
+                keyword_data = routing_context["keyword_data"]
+                internal_links = routing_context["internal_links"]
+
+                from agent import create_csv_for_metadata_generator, call_metadata_generator_sync
+
+                site_info = {
+                    "name": selected_site.name,
+                    "domain": selected_site.domain,
+                    "niche": selected_site.niche
+                }
+
+                print(f"\n✍️ CALLING METADATA GENERATOR (COPYWRITER PATH)")
+                print(f"Keyword: {keyword}")
+                print(f"Site: {selected_site.name}")
+                print("=" * 50)
+
+                csv_file = create_csv_for_metadata_generator(keyword, keyword_data, site_info)
+
+                if csv_file:
+                    agent_response = call_metadata_generator_sync(csv_file, keyword)
+                else:
+                    agent_response = {
+                        "success": False,
+                        "error": "Failed to create CSV file for metadata generator"
+                    }
+
+                # Create final response
+                from models import SiteInfo, OutputPayload, RoutingMetadata
+
+                output_payload = {
+                    "agent_target": "copywriter",
+                    "keyword": keyword,
+                    "site_config": SiteInfo(
+                        site_id=selected_site.site_id,
+                        name=selected_site.name,
+                        domain=selected_site.domain,
+                        niche=selected_site.niche,
+                        theme=selected_site.theme,
+                        language=selected_site.language,
+                        sitemap_url=selected_site.sitemap_url,
+                        wordpress_api_url=selected_site.wordpress_api_url
+                    ),
+                    "serp_analysis": routing_context.get("serp_analysis"),
+                    "similar_keywords": routing_context.get("similar_keywords", []),
+                    "internal_linking_suggestions": internal_links,
+                    "routing_metadata": RoutingMetadata(
+                        confidence_score=confidence,
+                        content_source="wordpress_api",
+                        timestamp=datetime.now().isoformat()
+                    ),
+                    "existing_content": routing_context["best_content"],
+                    "llm_reasoning": reasoning,
+                    "agent_response": agent_response
+                }
+
+                # Clean up validation
+                del pending_validations[validation_id]
+
+                logger.info(f"✅ Copywriter executed successfully")
+
+                return {
+                    "success": True,
+                    "routing_decision": "copywriter",
+                    "selected_site": SiteInfo(**selected_site.__dict__),
+                    "confidence_score": confidence,
+                    "reasoning": reasoning,
+                    "payload": OutputPayload(**output_payload),
+                    "internal_linking_suggestions": internal_links,
+                    "agent_response": agent_response,
+                    "is_llm_powered": True,
+                    "is_human_validated": True
+                }
+
+            elif action_choice == "rewriter":
+                # Ask for URL input
+                logger.info("🔗 Rewriter chosen, asking for URL input")
+
+                url_validation_id = f"url_{datetime.now().strftime('%Y%m%d_%H%M%S')}_{keyword.replace(' ', '_')}"
+
+                url_validation_data = {
+                    "type": "url_input",
+                    "keyword": keyword,
+                    "question": "Please provide the full URL of the article to rewrite:",
+                    "input_type": "url"
+                }
+
+                pending_validations[url_validation_id] = {
+                    "data": url_validation_data,
+                    "status": "pending",
+                    "created_at": datetime.now().isoformat(),
+                    "keyword": keyword,
+                    "routing_context": routing_context,
+                    "parent_validation": validation_id,
+                    "action_choice": "rewriter"
+                }
+
+                # Clean up current validation
+                del pending_validations[validation_id]
+
+                logger.info(f"🔗 URL input required for '{keyword}' - ID: {url_validation_id}")
+
+                return {
+                    "success": False,
+                    "validation_required": True,
+                    "validation_id": url_validation_id,
+                    "validation_data": url_validation_data,
+                    "message": f"URL input required. Use validation ID: {url_validation_id}",
+                    "step": "url_input"
+                }
+
+        elif validation_info["data"]["type"] == "url_input":
+            rewriter_url = human_response
+
+            # Execute rewriter with provided URL
             selected_site = routing_context["selected_site"]
             confidence = routing_context["confidence"]
             reasoning = routing_context["reasoning"]
             keyword_data = routing_context["keyword_data"]
             internal_links = routing_context["internal_links"]
 
-            # Call rewriter directly
             from agent import build_additional_content, call_rewriter_agent_json
             additional_content = build_additional_content(keyword_data)
 
-            print(f"\n🔄 AUTO-CALLING REWRITER AGENT")
+            print(f"\n🔄 CALLING REWRITER AGENT WITH USER-PROVIDED URL")
             print(f"Keyword: {keyword}")
             print(f"Site: {selected_site.name}")
-            print(f"URL: {suggested_url}")
+            print(f"URL: {rewriter_url}")
             print("=" * 50)
 
-            agent_response = call_rewriter_agent_json(suggested_url, keyword, additional_content)
+            agent_response = call_rewriter_agent_json(rewriter_url, keyword, additional_content)
 
-            # Create final response (same as your execute-action)
-            from models import SiteInfo, OutputPayload, RoutingMetadata
+            # Create final response with proper defaults for missing data
+            from models import SiteInfo, OutputPayload, RoutingMetadata, SERPAnalysis, SimilarKeyword
+
+            # Create proper SERP analysis from routing context or defaults
+            serp_analysis = routing_context.get("serp_analysis")
+            if not serp_analysis:
+                # Create empty SERP analysis as fallback
+                serp_analysis = SERPAnalysis(
+                    top_results=[],
+                    people_also_ask=[]
+                )
+
+            # Create proper similar keywords from routing context or defaults
+            similar_keywords = routing_context.get("similar_keywords", [])
+            if not similar_keywords:
+                similar_keywords = []
 
             output_payload = {
                 "agent_target": "rewriter",
@@ -485,15 +765,15 @@ async def continue_workflow(validation_id: str):
                     sitemap_url=selected_site.sitemap_url,
                     wordpress_api_url=selected_site.wordpress_api_url
                 ),
-                "serp_analysis": routing_context.get("serp_analysis"),
-                "similar_keywords": routing_context.get("similar_keywords", []),
+                "serp_analysis": serp_analysis,  # Now properly created
+                "similar_keywords": similar_keywords,  # Now properly created
                 "internal_linking_suggestions": internal_links,
                 "routing_metadata": RoutingMetadata(
                     confidence_score=confidence,
                     content_source="wordpress_api",
                     timestamp=datetime.now().isoformat()
                 ),
-                "existing_content": best_content,
+                "existing_content": routing_context.get("best_content"),
                 "llm_reasoning": reasoning,
                 "agent_response": agent_response
             }
@@ -501,68 +781,34 @@ async def continue_workflow(validation_id: str):
             # Clean up validation
             del pending_validations[validation_id]
 
-            logger.info(f"✅ Auto-execution completed successfully: REWRITER")
+            logger.info(f"✅ Rewriter executed successfully with user-provided URL")
 
             return {
                 "success": True,
                 "routing_decision": "rewriter",
-                "selected_site": SiteInfo(**selected_site.__dict__),
+                "selected_site": SiteInfo(
+                    site_id=selected_site.site_id,
+                    name=selected_site.name,
+                    domain=selected_site.domain,
+                    niche=selected_site.niche,
+                    theme=selected_site.theme,
+                    language=selected_site.language,
+                    sitemap_url=selected_site.sitemap_url,
+                    wordpress_api_url=selected_site.wordpress_api_url
+                ),
                 "confidence_score": confidence,
                 "reasoning": reasoning,
                 "payload": OutputPayload(**output_payload),
                 "internal_linking_suggestions": internal_links,
                 "agent_response": agent_response,
                 "is_llm_powered": True,
-                "is_human_validated": True,
-                "auto_executed": True  # Flag to show it was auto-executed
-            }
-
-        else:
-            # No good URL found, fall back to asking for action choice (your original logic)
-            logger.info("⚠️ No suitable URL found, asking for action choice")
-
-            # Human approved, now ask for action choice (your existing logic)
-            options = ["copywriter", "stop"]
-            if best_content and best_content.get("content_found"):
-                options.insert(0, "rewriter")  # Put rewriter first if content exists
-
-            # Create action choice validation (your existing logic)
-            action_validation_id = f"action_{datetime.now().strftime('%Y%m%d_%H%M%S')}_{keyword.replace(' ', '_')}"
-
-            action_validation_data = {
-                "type": "action_choice",
-                "keyword": keyword,
-                "question": "What action would you like to take?",
-                "options": options,
-                "existing_content": best_content
-            }
-
-            pending_validations[action_validation_id] = {
-                "data": action_validation_data,
-                "status": "pending",
-                "created_at": datetime.now().isoformat(),
-                "keyword": keyword,
-                "routing_context": routing_context,
-                "parent_validation": validation_id
-            }
-
-            # Clean up original validation
-            del pending_validations[validation_id]
-
-            logger.info(f"🎯 Action choice required for '{keyword}' - ID: {action_validation_id}")
-
-            return {
-                "success": False,  # Still pending
-                "validation_required": True,
-                "validation_id": action_validation_id,
-                "validation_data": action_validation_data,
-                "message": f"Action choice required. Use validation ID: {action_validation_id}",
-                "step": "action_choice"
+                "is_human_validated": True
             }
 
     except Exception as e:
         logger.error(f"❌ Error continuing workflow: {e}")
         raise HTTPException(status_code=500, detail=str(e))
+    return 1
 
 
 @app.post("/execute-action/{validation_id}")
@@ -627,6 +873,13 @@ async def execute_action(validation_id: str):
                 }
 
         elif action_choice == "copywriter":
+            # Execute copywriter path
+            selected_site = routing_context["selected_site"]
+            confidence = routing_context["confidence"]
+            reasoning = routing_context["reasoning"]
+            keyword_data = routing_context["keyword_data"]
+            internal_links = routing_context["internal_links"]
+
             from agent import create_csv_for_metadata_generator, call_metadata_generator_sync
 
             site_info = {
@@ -640,7 +893,6 @@ async def execute_action(validation_id: str):
             print(f"Site: {selected_site.name}")
             print("=" * 50)
 
-            # Create CSV file for metadata generator
             csv_file = create_csv_for_metadata_generator(keyword, keyword_data, site_info)
 
             if csv_file:
@@ -651,56 +903,79 @@ async def execute_action(validation_id: str):
                     "error": "Failed to create CSV file for metadata generator"
                 }
 
-        # Create final response
-        from models import SiteInfo, OutputPayload, RoutingMetadata
+            # Create final response with proper defaults
+            from models import SiteInfo, OutputPayload, RoutingMetadata, SERPAnalysis, SimilarKeyword
 
-        output_payload = {
-            "agent_target": action_choice,
-            "keyword": keyword,
-            "site_config": SiteInfo(
-                site_id=selected_site.site_id,
-                name=selected_site.name,
-                domain=selected_site.domain,
-                niche=selected_site.niche,
-                theme=selected_site.theme,
-                language=selected_site.language,
-                sitemap_url=selected_site.sitemap_url,
-                wordpress_api_url=selected_site.wordpress_api_url
-            ),
-            "serp_analysis": routing_context.get("serp_analysis"),
-            "similar_keywords": routing_context.get("similar_keywords", []),
-            "internal_linking_suggestions": internal_links,
-            "routing_metadata": RoutingMetadata(
-                confidence_score=confidence,
-                content_source="wordpress_api",
-                timestamp=datetime.now().isoformat()
-            ),
-            "existing_content": best_content,
-            "llm_reasoning": reasoning,
-            "agent_response": agent_response
-        }
+            # Create proper SERP analysis from routing context or defaults
+            serp_analysis = routing_context.get("serp_analysis")
+            if not serp_analysis:
+                serp_analysis = SERPAnalysis(
+                    top_results=[],
+                    people_also_ask=[]
+                )
 
-        # Clean up validation
-        del pending_validations[validation_id]
+            # Create proper similar keywords from routing context or defaults
+            similar_keywords = routing_context.get("similar_keywords", [])
+            if not similar_keywords:
+                similar_keywords = []
 
-        logger.info(f"✅ Action executed successfully: {action_choice.upper()}")
+            output_payload = {
+                "agent_target": "copywriter",
+                "keyword": keyword,
+                "site_config": SiteInfo(
+                    site_id=selected_site.site_id,
+                    name=selected_site.name,
+                    domain=selected_site.domain,
+                    niche=selected_site.niche,
+                    theme=selected_site.theme,
+                    language=selected_site.language,
+                    sitemap_url=selected_site.sitemap_url,
+                    wordpress_api_url=selected_site.wordpress_api_url
+                ),
+                "serp_analysis": serp_analysis,  # Now properly created
+                "similar_keywords": similar_keywords,  # Now properly created
+                "internal_linking_suggestions": internal_links,
+                "routing_metadata": RoutingMetadata(
+                    confidence_score=confidence,
+                    content_source="wordpress_api",
+                    timestamp=datetime.now().isoformat()
+                ),
+                "existing_content": routing_context.get("best_content"),
+                "llm_reasoning": reasoning,
+                "agent_response": agent_response
+            }
 
-        return {
-            "success": True,
-            "routing_decision": action_choice,
-            "selected_site": SiteInfo(**selected_site.__dict__),
-            "confidence_score": confidence,
-            "reasoning": reasoning,
-            "payload": OutputPayload(**output_payload),
-            "internal_linking_suggestions": internal_links,
-            "agent_response": agent_response,
-            "is_llm_powered": True,
-            "is_human_validated": True
-        }
+            # Clean up validation
+            del pending_validations[validation_id]
+
+            logger.info(f"✅ Copywriter executed successfully")
+
+            return {
+                "success": True,
+                "routing_decision": "copywriter",
+                "selected_site": SiteInfo(
+                    site_id=selected_site.site_id,
+                    name=selected_site.name,
+                    domain=selected_site.domain,
+                    niche=selected_site.niche,
+                    theme=selected_site.theme,
+                    language=selected_site.language,
+                    sitemap_url=selected_site.sitemap_url,
+                    wordpress_api_url=selected_site.wordpress_api_url
+                ),
+                "confidence_score": confidence,
+                "reasoning": reasoning,
+                "payload": OutputPayload(**output_payload),
+                "internal_linking_suggestions": internal_links,
+                "agent_response": agent_response,
+                "is_llm_powered": True,
+                "is_human_validated": True
+            }
 
     except Exception as e:
         logger.error(f"❌ Error executing action: {e}")
         raise HTTPException(status_code=500, detail=str(e))
+    return 1
 
 
 @app.get("/sites")
