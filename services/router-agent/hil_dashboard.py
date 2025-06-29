@@ -2,6 +2,7 @@
 """
 Dashboard HIL Centralisé
 Permet d'interagir avec tous les agents depuis un terminal centralisé
+Ajout du support pour la sélection de mots-clés
 """
 
 import asyncio
@@ -71,8 +72,11 @@ class HILDashboard:
                     is_healthy = await self.check_agent_health(name, url)
                     agent_status[name] = "🟢" if is_healthy else "🔴"
 
-                # Check for pending validations
-                await self.check_pending_validations()
+                # Check for pending validations from router-agent
+                await self.check_pending_validations_router()
+
+                # Check for pending validations from content-finder
+                await self.check_pending_validations_content_finder()
 
                 # Sleep before next check
                 await asyncio.sleep(10)
@@ -81,7 +85,7 @@ class HILDashboard:
                 self.log(f"Error in monitoring: {e}", 'RED')
                 await asyncio.sleep(5)
 
-    async def check_pending_validations(self):
+    async def check_pending_validations_router(self):
         """Check for pending validations from router-agent"""
         try:
             async with aiohttp.ClientSession() as session:
@@ -93,23 +97,47 @@ class HILDashboard:
                         for validation in pending:
                             validation_id = validation["validation_id"]
                             if validation_id not in self.pending_validations:
-                                # New validation
+                                # New validation from router
+                                validation["source_agent"] = "router-agent"
                                 self.pending_validations[validation_id] = validation
                                 self.validation_queue.put(validation)
 
         except Exception as e:
             pass  # Ignore connection errors
 
-    async def submit_validation_response(self, validation_id: str, response: str) -> bool:
-        """Submit validation response to router-agent"""
+    async def check_pending_validations_content_finder(self):
+        """Check for pending validations from content-finder"""
+        try:
+            async with aiohttp.ClientSession() as session:
+                async with session.get(f"{self.agents['content-finder']}/pending-validations") as response:
+                    if response.status == 200:
+                        data = await response.json()
+                        pending = data.get("pending_validations", [])
+
+                        for validation in pending:
+                            validation_id = validation["validation_id"]
+                            if validation_id not in self.pending_validations:
+                                # New validation from content-finder
+                                validation["source_agent"] = "content-finder"
+                                self.pending_validations[validation_id] = validation
+                                self.validation_queue.put(validation)
+
+        except Exception as e:
+            pass  # Ignore connection errors
+
+    async def submit_validation_response(self, validation_id: str, response: str,
+                                         source_agent: str = "router-agent") -> bool:
+        """Submit validation response to the appropriate agent"""
         try:
             async with aiohttp.ClientSession() as session:
                 payload = {
                     "validation_id": validation_id,
                     "response": response
                 }
+
+                agent_url = self.agents[source_agent]
                 async with session.post(
-                        f"{self.agents['router-agent']}/submit-validation",
+                        f"{agent_url}/submit-validation",
                         json=payload
                 ) as resp:
                     return resp.status == 200
@@ -117,12 +145,13 @@ class HILDashboard:
             self.log(f"Error submitting validation: {e}", 'RED')
             return False
 
-    async def continue_workflow(self, validation_id: str) -> Dict[str, Any]:
+    async def continue_workflow(self, validation_id: str, source_agent: str = "router-agent") -> Dict[str, Any]:
         """Continue workflow after validation"""
         try:
             async with aiohttp.ClientSession() as session:
+                agent_url = self.agents[source_agent]
                 async with session.post(
-                        f"{self.agents['router-agent']}/continue-workflow/{validation_id}"
+                        f"{agent_url}/continue-workflow/{validation_id}"
                 ) as resp:
                     if resp.status == 200:
                         return await resp.json()
@@ -131,12 +160,29 @@ class HILDashboard:
         except Exception as e:
             return {"error": str(e)}
 
-    async def execute_action(self, validation_id: str) -> Dict[str, Any]:
+    async def execute_action(self, validation_id: str, source_agent: str = "router-agent") -> Dict[str, Any]:
         """Execute final action"""
         try:
             async with aiohttp.ClientSession() as session:
+                agent_url = self.agents[source_agent]
                 async with session.post(
-                        f"{self.agents['router-agent']}/execute-action/{validation_id}"
+                        f"{agent_url}/execute-action/{validation_id}"
+                ) as resp:
+                    if resp.status == 200:
+                        return await resp.json()
+                    else:
+                        return {"error": f"HTTP {resp.status}"}
+        except Exception as e:
+            return {"error": str(e)}
+
+    async def continue_keyword_selection_workflow(self, validation_id: str, selected_keyword: str) -> Dict[str, Any]:
+        """Continue content-finder workflow after keyword selection"""
+        try:
+            async with aiohttp.ClientSession() as session:
+                payload = {"selected_keyword": selected_keyword}
+                async with session.post(
+                        f"{self.agents['content-finder']}/continue-with-keyword/{validation_id}",
+                        json=payload
                 ) as resp:
                     if resp.status == 200:
                         return await resp.json()
@@ -163,29 +209,56 @@ class HILDashboard:
     def display_validation_request(self, validation_data: Dict[str, Any]):
         """Display validation request in a nice format"""
         data = validation_data["data"]
+        source_agent = validation_data.get("source_agent", "router-agent")
 
-        print(self.colored("🤔 DEMANDE DE VALIDATION", 'YELLOW'))
-        print("=" * 50)
-        print(f"Agent: {self.colored('Router-Agent', 'MAGENTA')}")
-        print(f"Keyword: {self.colored(data.get('keyword', 'N/A'), 'WHITE')}")
-        print(f"Site sélectionné: {self.colored(data.get('selected_site', 'N/A'), 'GREEN')}")
-        print(f"Décision: {self.colored(data.get('routing_decision', 'N/A'), 'BLUE')}")
-        print(f"Confiance: {self.colored(data.get('confidence_score', 'N/A'), 'CYAN')}")
+        if data["type"] == "keyword_selection":
+            # NEW: Keyword selection display
+            print(self.colored("🔍 SÉLECTION DE MOT-CLÉ PRINCIPAL", 'YELLOW'))
+            print("=" * 50)
+            print(f"Agent: {self.colored('Content-Finder', 'MAGENTA')}")
 
-        if data.get('existing_content_found'):
-            print(f"Contenu existant: {self.colored('✅ Trouvé', 'GREEN')}")
-            if data.get('best_match_title'):
-                print(f"Meilleur match: {data['best_match_title']}")
-        else:
-            print(f"Contenu existant: {self.colored('❌ Non trouvé', 'RED')}")
+            keywords = data.get('keywords', [])
+            keyword_data = data.get('keyword_data', {})
 
-        print()
-        print("Raisonnement:")
-        reasoning = data.get('reasoning', '').strip()
-        for line in reasoning.split('\n'):
-            if line.strip():
-                print(f"  {line.strip()}")
-        print()
+            print(f"Mots-clés disponibles: {self.colored(str(len(keywords)), 'WHITE')}")
+            print()
+
+            # Show each keyword with its metrics
+            for i, keyword in enumerate(keywords[:10], 1):
+                kw_data = keyword_data.get(keyword, {})
+                competition = kw_data.get('competition', 'UNKNOWN')
+                monthly_searches = kw_data.get('monthly_searches', 0)
+
+                print(f"{self.colored(f'{i:2d}.', 'CYAN')} {self.colored(keyword, 'WHITE')}")
+                print(f"     Volume: {self.colored(str(monthly_searches), 'GREEN')} | "
+                      f"Concurrence: {self.colored(competition, 'BLUE')}")
+
+            print()
+
+        elif data["type"] == "routing_approval":
+            # Existing routing approval display
+            print(self.colored("🤔 DEMANDE DE VALIDATION", 'YELLOW'))
+            print("=" * 50)
+            print(f"Agent: {self.colored('Router-Agent', 'MAGENTA')}")
+            print(f"Keyword: {self.colored(data.get('keyword', 'N/A'), 'WHITE')}")
+            print(f"Site sélectionné: {self.colored(data.get('selected_site', 'N/A'), 'GREEN')}")
+            print(f"Décision: {self.colored(data.get('routing_decision', 'N/A'), 'BLUE')}")
+            print(f"Confiance: {self.colored(data.get('confidence_score', 'N/A'), 'CYAN')}")
+
+            if data.get('existing_content_found'):
+                print(f"Contenu existant: {self.colored('✅ Trouvé', 'GREEN')}")
+                if data.get('best_match_title'):
+                    print(f"Meilleur match: {data['best_match_title']}")
+            else:
+                print(f"Contenu existant: {self.colored('❌ Non trouvé', 'RED')}")
+
+            print()
+            print("Raisonnement:")
+            reasoning = data.get('reasoning', '').strip()
+            for line in reasoning.split('\n'):
+                if line.strip():
+                    print(f"  {line.strip()}")
+            print()
 
     def get_user_input(self, prompt: str, options: List[str]) -> str:
         """Get user input with validation"""
@@ -200,16 +273,83 @@ class HILDashboard:
             except EOFError:
                 return "stop"
 
+    def get_keyword_selection(self, keywords: List[str]) -> str:
+        """Get keyword selection from user"""
+        while True:
+            try:
+                print(self.colored(f"Options disponibles:", 'CYAN'))
+                print(f"  • Tapez un numéro (1-{len(keywords[:10])})")
+                print(f"  • Tapez 'stop' pour arrêter")
+                print()
+
+                selection = input(
+                    self.colored(f"Votre choix: ", 'YELLOW')
+                ).strip()
+
+                if selection.lower() in ['stop', 'quit', 'exit']:
+                    return "stop"
+
+                try:
+                    selection_num = int(selection)
+                    if 1 <= selection_num <= len(keywords[:10]):
+                        return keywords[selection_num - 1]
+                    else:
+                        print(f"❌ Veuillez choisir entre 1 et {len(keywords[:10])}")
+                        continue
+                except ValueError:
+                    print("❌ Veuillez entrer un numéro valide ou 'stop'")
+                    continue
+
+            except KeyboardInterrupt:
+                return "stop"
+            except EOFError:
+                return "stop"
+
     async def handle_validation(self, validation_data: Dict[str, Any]):
         """Handle a validation request interactively"""
         validation_id = validation_data["validation_id"]
         data = validation_data["data"]
+        source_agent = validation_data.get("source_agent", "router-agent")
 
         # Display the request
         self.display_validation_request(validation_data)
 
-        if data["type"] == "routing_approval":
-            # Ask for approval
+        if data["type"] == "keyword_selection":
+            # NEW: Handle keyword selection
+            keywords = data.get("keywords", [])
+
+            selected_keyword = self.get_keyword_selection(keywords)
+
+            # Submit response
+            success = await self.submit_validation_response(validation_id, selected_keyword, source_agent)
+
+            if success:
+                self.log(f"✅ Réponse envoyée: {selected_keyword}", 'GREEN')
+
+                if selected_keyword != "stop":
+                    # Continue workflow with selected keyword
+                    self.log("🔄 Continuation du workflow avec le mot-clé sélectionné...", 'BLUE')
+                    result = await self.continue_keyword_selection_workflow(validation_id, selected_keyword)
+
+                    if result.get("success"):
+                        self.log("✅ Workflow continué avec succès!", 'GREEN')
+
+                        # Check if this triggers router-agent workflow
+                        router_response = result.get("router_response")
+                        if router_response and router_response.get("validation_required"):
+                            new_validation_id = router_response["validation_id"]
+                            self.log(f"🔄 Router-agent validation déclenchée: {new_validation_id}", 'BLUE')
+                        elif router_response and router_response.get("success"):
+                            self.log(f"✅ Processus complet terminé avec succès!", 'GREEN')
+                    else:
+                        self.log(f"❌ Erreur: {result.get('error', 'Unknown error')}", 'RED')
+                else:
+                    self.log("🛑 Processus arrêté par l'utilisateur", 'RED')
+            else:
+                self.log("❌ Erreur lors de l'envoi de la réponse", 'RED')
+
+        elif data["type"] == "routing_approval":
+            # Existing routing approval logic
             response = self.get_user_input(
                 self.colored("Approuvez-vous cette décision de routage?", 'YELLOW'),
                 ["yes", "no", "y", "n"]
@@ -222,7 +362,7 @@ class HILDashboard:
                 response = "no"
 
             # Submit response
-            success = await self.submit_validation_response(validation_id, response)
+            success = await self.submit_validation_response(validation_id, response, source_agent)
 
             if success:
                 self.log(f"✅ Réponse envoyée: {response}", 'GREEN')
@@ -230,7 +370,7 @@ class HILDashboard:
                 if response == "yes":
                     # Continue workflow
                     self.log("🔄 Continuation du workflow...", 'BLUE')
-                    result = await self.continue_workflow(validation_id)
+                    result = await self.continue_workflow(validation_id, source_agent)
 
                     if "validation_required" in result:
                         # Another validation needed (no good URL found)
@@ -253,7 +393,7 @@ class HILDashboard:
                     self.log("🛑 Processus arrêté par l'utilisateur", 'RED')
 
         elif data["type"] == "action_choice":
-            # Ask for action choice
+            # Existing action choice logic
             options = data.get("options", ["copywriter", "stop"])
             response = self.get_user_input(
                 self.colored("Quelle action souhaitez-vous prendre?", 'YELLOW'),
@@ -261,7 +401,7 @@ class HILDashboard:
             )
 
             # Submit response
-            success = await self.submit_validation_response(validation_id, response)
+            success = await self.submit_validation_response(validation_id, response, source_agent)
 
             if success:
                 self.log(f"✅ Action choisie: {response}", 'GREEN')
@@ -269,7 +409,7 @@ class HILDashboard:
                 if response != "stop":
                     # Execute action
                     self.log("🔄 Exécution de l'action...", 'BLUE')
-                    result = await self.execute_action(validation_id)
+                    result = await self.execute_action(validation_id, source_agent)
 
                     if result.get("success"):
                         self.log("✅ Action exécutée avec succès!", 'GREEN')
@@ -319,6 +459,7 @@ class HILDashboard:
 
         print(self.colored("🚀 Démarrage du dashboard HIL...", 'GREEN'))
         print(self.colored("💡 Le dashboard surveille automatiquement les demandes de validation", 'CYAN'))
+        print(self.colored("🔍 Support ajouté pour la sélection de mots-clés", 'BLUE'))
         print(self.colored("🛑 Ctrl+C pour quitter", 'YELLOW'))
         print()
 
