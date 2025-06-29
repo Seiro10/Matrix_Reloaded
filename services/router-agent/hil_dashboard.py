@@ -249,8 +249,34 @@ class HILDashboard:
                 print(f"Contenu existant: {self.colored('✅ Trouvé', 'GREEN')}")
                 if data.get('best_match_title'):
                     print(f"Meilleur match: {data['best_match_title']}")
-            else:
-                print(f"Contenu existant: {self.colored('❌ Non trouvé', 'RED')}")
+
+        elif data["type"] == "action_choice":
+            # NEW: Action choice display
+            print(self.colored("🎯 CHOIX D'ACTION", 'YELLOW'))
+            print("=" * 50)
+            print(f"Agent: {self.colored('Router-Agent', 'MAGENTA')}")
+            print(f"Keyword: {self.colored(data.get('keyword', 'N/A'), 'WHITE')}")
+            print(f"Question: {data.get('question', 'What action would you like to take?')}")
+            print()
+
+            options = data.get('options', [])
+            for i, option in enumerate(options, 1):
+                print(f"{self.colored(f'{i:2d}.', 'CYAN')} {self.colored(option.title(), 'WHITE')}")
+            print()
+
+        elif data["type"] == "url_input":
+            # NEW: URL input display
+            print(self.colored("🔗 SAISIE D'URL", 'YELLOW'))
+            print("=" * 50)
+            print(f"Agent: {self.colored('Router-Agent', 'MAGENTA')}")
+            print(f"Keyword: {self.colored(data.get('keyword', 'N/A'), 'WHITE')}")
+            print(f"Question: {data.get('question', 'Please provide the URL:')}")
+            print()
+            print(self.colored("Exemple: https://stuffgaming.fr/mon-article/", 'CYAN'))
+            print()
+
+        else:
+            print(f"Contenu existant: {self.colored('❌ Non trouvé', 'RED')}")
 
             print()
             print("Raisonnement:")
@@ -260,18 +286,30 @@ class HILDashboard:
                     print(f"  {line.strip()}")
             print()
 
-    def get_user_input(self, prompt: str, options: List[str]) -> str:
+    def get_user_input(self, prompt: str, options: List[str], input_type: str = "choice") -> str:
         """Get user input with validation"""
         while True:
             try:
-                response = input(f"{prompt} ({'/'.join(options)}): ").strip().lower()
-                if response in [opt.lower() for opt in options]:
-                    return response
-                print(f"Veuillez choisir parmi: {', '.join(options)}")
+                if input_type == "url":
+                    # Special handling for URL input
+                    response = input(f"{prompt}: ").strip()
+                    if response.lower() in ['stop', 'quit', 'exit']:
+                        return "stop"
+                    if response.startswith('http'):
+                        return response
+                    print("❌ Veuillez entrer une URL valide (commençant par http) ou 'stop'")
+                    continue
+                else:
+                    # Normal choice input
+                    response = input(f"{prompt} ({'/'.join(options)}): ").strip().lower()
+                    if response in [opt.lower() for opt in options]:
+                        return response
+                    print(f"Veuillez choisir parmi: {', '.join(options)}")
             except KeyboardInterrupt:
                 return "stop"
             except EOFError:
                 return "stop"
+
 
     def get_keyword_selection(self, keywords: List[str]) -> str:
         """Get keyword selection from user"""
@@ -348,89 +386,101 @@ class HILDashboard:
             else:
                 self.log("❌ Erreur lors de l'envoi de la réponse", 'RED')
 
+
         elif data["type"] == "routing_approval":
+
             # Existing routing approval logic
+
             response = self.get_user_input(
+
                 self.colored("Approuvez-vous cette décision de routage?", 'YELLOW'),
+
                 ["yes", "no", "y", "n"]
+
             )
 
-            # Normalize response
             if response in ["y", "yes"]:
                 response = "yes"
             elif response in ["n", "no"]:
                 response = "no"
 
-            # Submit response
             success = await self.submit_validation_response(validation_id, response, source_agent)
 
             if success:
                 self.log(f"✅ Réponse envoyée: {response}", 'GREEN')
+                self.log("🔄 Continuation du workflow...", 'BLUE')
+                result = await self.continue_workflow(validation_id, source_agent)
 
-                if response == "yes":
-                    # Continue workflow
-                    self.log("🔄 Continuation du workflow...", 'BLUE')
-                    result = await self.continue_workflow(validation_id, source_agent)
+                if result.get("validation_required"):
+                    new_validation_id = result["validation_id"]
+                    self.log(f"⏳ Nouvelle validation requise: {new_validation_id}", 'YELLOW')
 
-                    if "validation_required" in result:
-                        # Another validation needed (no good URL found)
-                        new_validation_id = result["validation_id"]
-                        self.log(f"⏳ Nouvelle validation requise: {new_validation_id}", 'YELLOW')
-                        # The monitoring loop will pick this up
-                    elif result.get("auto_executed"):
-                        # Workflow was auto-executed with suggested URL
-                        self.log("✅ Workflow exécuté automatiquement avec URL suggérée!", 'GREEN')
-
-                        agent_response = result.get("agent_response", {})
-                        if agent_response and agent_response.get("success"):
-                            self.log(f"📝 Réponse agent: {agent_response.get('message', 'N/A')}", 'CYAN')
-                        elif agent_response:
-                            self.log(f"⚠️ Erreur agent: {agent_response.get('error', 'N/A')}", 'YELLOW')
-                    else:
-                        # Normal completion
-                        self.log("✅ Workflow terminé", 'GREEN')
+                elif result.get("auto_executed"):
+                    self.log("✅ Workflow exécuté automatiquement!", 'GREEN')
+                elif result.get("success"):
+                    self.log("✅ Workflow terminé avec succès!", 'GREEN')
                 else:
-                    self.log("🛑 Processus arrêté par l'utilisateur", 'RED')
+                    self.log(f"❌ Erreur: {result.get('error', 'Unknown error')}", 'RED')
+            else:
+                self.log("❌ Erreur lors de l'envoi de la réponse", 'RED')
 
         elif data["type"] == "action_choice":
-            # Existing action choice logic
-            options = data.get("options", ["copywriter", "stop"])
+            options = data.get("options", ["rewriter", "copywriter", "stop"])
             response = self.get_user_input(
                 self.colored("Quelle action souhaitez-vous prendre?", 'YELLOW'),
                 options
-            )
 
-            # Submit response
+            )
             success = await self.submit_validation_response(validation_id, response, source_agent)
 
             if success:
                 self.log(f"✅ Action choisie: {response}", 'GREEN')
+                self.log("🔄 Continuation du workflow...", 'BLUE')
+                result = await self.continue_workflow(validation_id, source_agent)
 
-                if response != "stop":
-                    # Execute action
-                    self.log("🔄 Exécution de l'action...", 'BLUE')
-                    result = await self.execute_action(validation_id, source_agent)
-
-                    if result.get("success"):
-                        self.log("✅ Action exécutée avec succès!", 'GREEN')
-
-                        agent_response = result.get("agent_response", {})
-                        if agent_response.get("success"):
-                            self.log(f"📝 Réponse agent: {agent_response.get('message', 'N/A')}", 'CYAN')
-                        else:
-                            self.log(f"⚠️ Erreur agent: {agent_response.get('error', 'N/A')}", 'YELLOW')
-                    else:
-                        self.log(f"❌ Erreur: {result.get('error', 'Unknown error')}", 'RED')
+                if result.get("validation_required"):
+                    new_validation_id = result["validation_id"]
+                    self.log(f"⏳ Nouvelle validation requise: {new_validation_id}", 'YELLOW')
+                elif result.get("success"):
+                    self.log("✅ Action exécutée avec succès!", 'GREEN')
                 else:
-                    self.log("🛑 Processus arrêté par l'utilisateur", 'RED')
+                    self.log(f"❌ Erreur: {result.get('error', 'Unknown error')}", 'RED')
             else:
                 self.log("❌ Erreur lors de l'envoi de la réponse", 'RED')
 
-        # Clean up
+        elif data["type"] == "url_input":
+            response = self.get_user_input(
+                self.colored("Entrez l'URL complète de l'article à réécrire", 'YELLOW'),
+                ["stop"],  # Only stop option, or any URL
+                input_type="url"
+
+            )
+            success = await self.submit_validation_response(validation_id, response, source_agent)
+            if success:
+                self.log(f"✅ URL fournie: {response}", 'GREEN')
+                if response != "stop":
+                    self.log("🔄 Exécution du rewriter avec l'URL fournie...", 'BLUE')
+                    result = await self.continue_workflow(validation_id, source_agent)
+
+                    if result.get("success"):
+                        self.log("✅ Rewriter exécuté avec succès!", 'GREEN')
+
+                    else:
+                        self.log(f"❌ Erreur: {result.get('error', 'Unknown error')}", 'RED')
+
+                else:
+                    self.log("🛑 Processus arrêté par l'utilisateur", 'RED')
+
+            else:
+                self.log("❌ Erreur lors de l'envoi de la réponse", 'RED')
+
+            # Clean up
+
         if validation_id in self.pending_validations:
             del self.pending_validations[validation_id]
 
         print()
+
         input(self.colored("Appuyez sur Entrée pour continuer...", 'CYAN'))
 
     def run_input_handler(self):
