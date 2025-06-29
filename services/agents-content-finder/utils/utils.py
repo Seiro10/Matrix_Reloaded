@@ -32,50 +32,98 @@ def fetch_keyword_data_from_dataforseo(terms: List[str], language_code="fr", loc
         })
 
     try:
+        print(f"[DEBUG] Sending request to: {url}")
+        print(f"[DEBUG] Payload: {json.dumps(payload, indent=2)}")
+
         response = requests.post(url, headers=headers, json=payload)
-        print(f"[DEBUG] status = {response.status_code}")
-        print(f"[DEBUG] body = {response.text[:300]}...")
+        print(f"[DEBUG] Response status: {response.status_code}")
+        print(f"[DEBUG] Response headers: {dict(response.headers)}")
+        print(f"[DEBUG] Full response body: {response.text}")
 
         if response.status_code != 200:
             raise Exception(f"[DataForSEO ERROR] {response.status_code}: {response.text}")
 
         data = response.json()
+        print(f"[DEBUG] Parsed JSON: {json.dumps(data, indent=2)}")
+
         all_keywords = []
 
-        for task in data.get("tasks", []):
+        for i, task in enumerate(data.get("tasks", [])):
+            print(f"[DEBUG] Processing task {i}: {task}")
+
             if task.get("status_code") != 20000:
                 print(f"[WARNING] ⚠️ Task failed: {task.get('status_message')}")
                 continue
 
             results = task.get("result", [])
+            print(f"[DEBUG] Task {i} results: {results}")
+
             if not results:
+                print(f"[DEBUG] No results for task {i}")
                 continue
 
+            # Check the structure of the first result
+            if results:
+                print(f"[DEBUG] First result structure: {json.dumps(results[0], indent=2)}")
+
             for item in results[0].get("items", []):
+                keyword_info = item.get("keyword_data", {}).get("keyword_info", {})
+
+                # ✅ Try multiple possible competition fields
+                competition_raw = (
+                        keyword_info.get("competition") or  # String value
+                        keyword_info.get("competition_index") or  # Numeric value
+                        item.get("competition") or  # Direct field
+                        "UNKNOWN"
+                )
+
                 all_keywords.append({
                     "keyword": item.get("keyword_data", {}).get("keyword", ""),
-                    "monthly_searches": item.get("keyword_data", {}).get("keyword_info", {}).get("search_volume", 0),
-                    "competition": parse_competition_level(item.get("keyword_data", {}).get("keyword_info", {}).get("competition", 0))
+                    "monthly_searches": keyword_info.get("search_volume", 0),
+                    "competition": parse_competition_level(competition_raw)  # ✅ Parse properly
                 })
 
+                print(f"[DEBUG] Processed: {all_keywords[-1]}")
+
+        print(f"[DEBUG] Final all_keywords: {all_keywords}")
         print(f"[SUMMARY] ✅ {len(all_keywords)} mots-clés récupérés")
         return all_keywords
 
     except Exception as e:
         print(f"[ERROR] ❌ fetch_keyword_data_from_dataforseo: {e}")
+        import traceback
+        traceback.print_exc()
         return []
 
 
-def parse_competition_level(index: int) -> str:
-    if index is None:
-        return "UNKNOWN"
-    elif index < 33:
-        return "LOW"
-    elif index < 66:
-        return "MEDIUM"
-    else:
-        return "HIGH"
+def parse_competition_level(competition_value) -> str:
+    """Parse competition level from DataForSEO response"""
 
+    print(f"[DEBUG] Parsing competition value: {competition_value} (type: {type(competition_value)})")
+
+    # If it's already a string, return it
+    if isinstance(competition_value, str):
+        result = competition_value.upper()
+        print(f"[DEBUG] String competition: {result}")
+        return result
+
+    # If it's a number (competition_index)
+    if isinstance(competition_value, (int, float)):
+        if competition_value is None:
+            result = "UNKNOWN"
+        elif competition_value < 33:
+            result = "LOW"
+        elif competition_value < 66:
+            result = "MEDIUM"
+        else:
+            result = "HIGH"
+
+        print(f"[DEBUG] Numeric competition {competition_value} -> {result}")
+        return result
+
+    # Default fallback
+    print(f"[DEBUG] Unknown competition type, defaulting to UNKNOWN")
+    return "UNKNOWN"
 
 # === SAVE TO JSON ===
 

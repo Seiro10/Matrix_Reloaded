@@ -1,4 +1,6 @@
+# serp_analysis/serp_analysis_nodes.py
 from dotenv import load_dotenv
+
 load_dotenv()
 
 import os
@@ -17,12 +19,34 @@ BRD_ZONE = os.getenv("BRIGHTDATA_ZONE_NAME")
 
 # === Node principal appelé par LangGraph ===
 async def fetch_serp_data_node(state: WorkflowState) -> WorkflowState:
+    print(f"[DEBUG] 🔍 Entering fetch_serp_data_node")
+    print(f"[DEBUG] Processing stopped: {state.get('processing_stopped', False)}")
+    print(f"[DEBUG] Awaiting keyword selection: {state.get('awaiting_keyword_selection', False)}")
+
+    # Check if processing was already stopped
+    if state.get("processing_stopped", False):
+        print(f"[SKIP] ⏭️ SERP ignoré: {state.get('no_data_reason', 'Process stopped earlier')}")
+        return state
+
     updated_keyword_data = state.get("keyword_data", {})
+    deduplicated_keywords = state.get("deduplicated_keywords", [])
+
     print("[DEBUG] keyword_data initial:", updated_keyword_data)
 
-    for i, keyword in enumerate(state["deduplicated_keywords"]):
+    # NEW: Check if we have any keywords to process
+    if not deduplicated_keywords:
+        print("[STOP] 🛑 Aucun mot-clé dédupliqué pour l'analyse SERP. Arrêt du processus.")
+        state.update({
+            "processing_stopped": True,
+            "no_data_reason": "No deduplicated keywords for SERP analysis"
+        })
+        return state
+
+    print(f"[INFO] Début de l'analyse SERP pour {len(deduplicated_keywords)} mots-clés")
+
+    for i, keyword in enumerate(deduplicated_keywords):
         try:
-            print(f"[INFO] Processing keyword {i + 1}/{len(state['deduplicated_keywords'])}: '{keyword}'")
+            print(f"[INFO] Processing keyword {i + 1}/{len(deduplicated_keywords)}: '{keyword}'")
 
             response = await query_brightdata_serp_structured(keyword)
 
@@ -58,12 +82,26 @@ async def fetch_serp_data_node(state: WorkflowState) -> WorkflowState:
             print(f"[ERROR] Failed SERP fetch for '{keyword}': {e}")
             updated_keyword_data[keyword] = {"error": str(e)}
 
-        if i < len(state["deduplicated_keywords"]) - 1:
+        if i < len(deduplicated_keywords) - 1:
             await asyncio.sleep(2)
 
+    # NEW: Check if we got any usable SERP data
+    valid_keywords = 0
+    for keyword, data in updated_keyword_data.items():
+        if not data.get("error") and data.get("organic_results"):
+            valid_keywords += 1
+
+    if valid_keywords == 0:
+        print("[STOP] 🛑 Aucune donnée SERP valide récupérée. Arrêt du processus.")
+        state.update({
+            "processing_stopped": True,
+            "no_data_reason": f"No valid SERP data retrieved for any of {len(deduplicated_keywords)} keywords"
+        })
+        return state
+
+    print(f"[SUCCESS] 📊 SERP data retrieved for {valid_keywords}/{len(deduplicated_keywords)} keywords")
     state["keyword_data"] = updated_keyword_data
     return state
-
 
 
 # === BrightData Structured API
@@ -133,9 +171,25 @@ def is_html_response(response: dict) -> bool:
     return isinstance(response, dict) and "body" in response and "<html" in response["body"].lower()
 
 
-# Dans serp_analysis/serp_analysis_nodes.py
-# Modifie la fonction parse_html_serp
+# === Extract SERP info from structured response
+def extract_serp_info(keyword: str, response: dict) -> dict:
+    """Extract SERP information from structured API response"""
+    data = {
+        "keyword": keyword,
+        "competition": "UNKNOWN",  # Will be filled from keyword_data
+        "people_also_ask": [],
+        "people_also_search_for": [],
+        "forum": [],
+        "organic_results": [],
+        "total_results_found": 0
+    }
 
+    # This would need to be implemented based on BrightData's structured response format
+    # For now, return basic structure
+    return data
+
+
+# === Parse HTML SERP response
 def parse_html_serp(keyword: str, response: dict, competition: str = "UNKNOWN") -> dict:
     html = response.get("body", "")
     soup = BeautifulSoup(html, 'html.parser')
@@ -260,7 +314,6 @@ def parse_html_serp(keyword: str, response: dict, competition: str = "UNKNOWN") 
             break
     data["people_also_ask"] = paa[:8]
 
-    # === Related Searches ===
     # === Related Searches (filtrage FR+EN) ===
     related_searches = []
 
@@ -276,8 +329,8 @@ def parse_html_serp(keyword: str, response: dict, competition: str = "UNKNOWN") 
         "vidéos", "actualités", "vidéos courtes", "livres",
         "toutes les langues", "moins d'une heure", "moins de 24 heures",
         "moins d'une semaine", "outils", "filtrer", "langue",
-        "images", "actualités", "plus de résultats", "moins d'un mois","moins d'un an",
-        "mot à mot", "effacer", "voir plus", "suivant", "produits", "moins de 24 heures"
+        "images", "actualités", "plus de résultats", "moins d'un mois", "moins d'un an",
+        "mot à mot", "effacer", "voir plus", "suivant", "produits", "moins de 24 heures"
     }
 
     # ✅ Union blacklist
