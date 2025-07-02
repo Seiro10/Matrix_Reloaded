@@ -1155,6 +1155,94 @@ def create_route_agent_with_hil():
     return compiled_workflow
 
 
+def create_csv_for_rss_content(rss_payload, output_dir: str = "./output") -> str:
+    """
+    Create CSV file for metadata generator from RSS content
+    Maps RSS payload to expected CSV format
+    """
+    import csv
+    import tempfile
+
+    try:
+        # Create temporary CSV file
+        temp_file = tempfile.NamedTemporaryFile(mode='w', delete=False, suffix='.csv', encoding='utf-8')
+        writer = csv.writer(temp_file)
+
+        # Header must match exactly what metadata generator expects
+        header = [
+            'KW', 'competition', 'Site', 'language', 'confidence', 'monthly_searches',
+            'people_also_ask', 'forum',
+            'position1', 'title1', 'url1', 'snippet1', 'content1', 'structure1', 'headlines1', 'metadescription1',
+            'position2', 'title2', 'url2', 'snippet2', 'content2', 'structure2', 'headlines2', 'metadescription2',
+            'position3', 'title3', 'url3', 'snippet3', 'content3', 'structure3', 'headlines3', 'metadescription3'
+        ]
+        writer.writerow(header)
+
+        # Map RSS payload to CSV row
+        keyword = rss_payload.title
+
+        # Prepare content snippets
+        content_snippet = rss_payload.content[:200] if rss_payload.content else ""
+        meta_description = rss_payload.content[:160] if rss_payload.content else ""
+
+        # RSS content becomes "competitor 1" (the reference content)
+        row = [
+            keyword,  # KW
+            'LOW',  # competition (RSS is original)
+            rss_payload.destination_website,  # Site
+            'FR',  # language
+            '1.0',  # confidence (high for RSS)
+            0,  # monthly_searches (not applicable)
+            '',  # people_also_ask (empty)
+            '',  # forum (empty)
+            # Competitor 1 (RSS content as reference)
+            '1',  # position1
+            rss_payload.title,  # title1
+            rss_payload.url,  # url1
+            content_snippet,  # snippet1
+            rss_payload.content,  # content1
+            '',  # structure1 (empty)
+            '',  # headlines1 (empty)
+            meta_description,  # metadescription1
+            # Competitor 2 (empty)
+            '', '', '', '', '', '', '', '',
+            # Competitor 3 (empty)
+            '', '', '', '', '', '', '', ''
+        ]
+
+        writer.writerow(row)
+        temp_file.close()
+
+        # Verify file was created
+        if os.path.exists(temp_file.name):
+            file_size = os.path.getsize(temp_file.name)
+            logger.info(f"✅ Created CSV for RSS content: {temp_file.name}")
+            logger.info(f"   📰 Title: {keyword}")
+            logger.info(f"   🏢 Destination: {rss_payload.destination_website}")
+            logger.info(f"   📁 File size: {file_size} bytes")
+            logger.info(f"   🔗 Source URL: {rss_payload.url}")
+
+            # Log first few lines for debugging
+            with open(temp_file.name, 'r', encoding='utf-8') as f:
+                lines = f.readlines()
+                logger.info(f"   📋 CSV has {len(lines)} lines")
+                if len(lines) > 0:
+                    logger.info(f"   📄 Header: {lines[0].strip()}")
+                if len(lines) > 1:
+                    logger.info(f"   📄 Data: {lines[1][:100]}...")
+
+            return temp_file.name
+        else:
+            logger.error(f"❌ CSV file was not created: {temp_file.name}")
+            return None
+
+    except Exception as e:
+        logger.error(f"❌ Error creating CSV for RSS content: {e}")
+        logger.error(f"❌ Exception type: {type(e)}")
+        import traceback
+        logger.error(f"❌ Traceback: {traceback.format_exc()}")
+        return None
+
 async def process_content_finder_output_with_api_hil(content_data: ContentFinderOutput) -> Dict[str, Any]:
     """
     Process content finder output with API-based human validation (for containers)

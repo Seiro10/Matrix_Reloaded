@@ -1,28 +1,16 @@
-version: "3.9"
-
 services:
   redis:
     image: redis:7-alpine
     container_name: rss_redis
-    restart: unless-stopped
     ports:
       - "6379:6379"
-    volumes:
-      - redis_data:/data
-    command: >
-      redis-server --appendonly yes --maxmemory 256mb --maxmemory-policy allkeys-lru
-    healthcheck:
-      test: ["CMD", "redis-cli", "ping"]
-      interval: 10s
-      timeout: 5s
-      retries: 3
     networks:
-      - rss_network
-    logging:
-      driver: json-file
-      options:
-        max-size: 10m
-        max-file: "3"
+      - content-agents  # Use same network as router agent
+    healthcheck:
+      test: ["CMD-SHELL", "redis-cli ping"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
 
   rss-agent:
     build:
@@ -42,12 +30,12 @@ services:
     depends_on:
       redis:
         condition: service_healthy
+    networks:
+      - content-agents
     volumes:
       - ./logs:/app/logs
       - ./data:/app/data
     user: "1000:1000"
-    networks:
-      - rss_network
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:8086/health"]
       interval: 30s
@@ -58,6 +46,33 @@ services:
       options:
         max-size: 10m
         max-file: "3"
+
+  rss-agent-worker:
+    build: .
+    command: celery -A core.queue_manager.celery_app worker --loglevel=info --queues=scraping,processing,uploads --concurrency=2
+    environment:
+      - ROUTER_AGENT_URL=http://matrix_reloaded-router-agent-1:8080
+      - REDIS_URL=redis://redis:6379/0
+      - CELERY_BROKER_URL=redis://redis:6379/0
+      - CELERY_RESULT_BACKEND=redis://redis:6379/0
+    depends_on:
+      redis:
+        condition: service_healthy
+    networks:
+      - content-agents
+
+  rss-agent-flower:
+    build: .
+    command: celery -A core.queue_manager.celery_app flower --port=5555
+    ports:
+      - "5555:5555"
+    environment:
+      - CELERY_BROKER_URL=redis://redis:6379/0
+      - CELERY_RESULT_BACKEND=redis://redis:6379/0
+    depends_on:
+      - redis
+    networks:
+      - content-agents
 
   celery-scraping:
     build:
@@ -201,5 +216,6 @@ volumes:
     driver: local
 
 networks:
-  rss_network:
-    driver: bridge
+  content-agents:
+    external: true
+    name: matrix_reloaded_content-agents

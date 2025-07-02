@@ -1,114 +1,114 @@
 {
   "scrapers": {
-    "league_of_legends": {
-      "seen_urls": [
-        "https://www.youtube.com/watch?v=QF9WsfDnNLk",
-        "https://lolesports.com/fr-fr/news/lec-summer-primer-finals-in-madrid-await",
-        "https://teamfighttactics.leagueoflegends.com/fr-fr/news/game-updates/teamfight-tactics-patch-14-7-notes-2025/",
-        "https://merch.riotgames.com/collection/MSI-2025/?utm_source=leagueoflegends.com&utm_medium=referral&utm_campaign=lol-newsfeed-msi25",
-        "https://www.leagueoflegends.com/fr-fr/news/community/blossom-blade-aram-challenge",
-        "https://www.leagueoflegends.com/fr-fr/news/game-updates/yunara-abilities-rundown",
-        "https://www.youtube.com/watch?v=OgjxlUqbhm4",
-        "https://www.leagueoflegends.com/fr-fr/news/game-updates/patch-25-13-notes",
-        "https://merch.riotgames.com/product/msi-2025-coach-jacket/?utm_source=leagueoflegends.com&utm_medium=referral&utm_campaign=lol-newsfeed-msi25",
-        "https://www.youtube.com/watch?v=AmXdlYgnLDg",
-        "https://www.youtube.com/watch?v=rKI_AVjKvbY",
-        "https://merch.riotgames.com/product/msi-2025-hockey-jersey/?utm_source=leagueoflegends.com&utm_medium=referral&utm_campaign=lol-newsfeed-msi25"
-      ],
-      "last_run": "2025-07-02T12:49:21.826794"
-    },
     "test_scraper": {
       "seen_urls": [
-        "https://example.com/news/event-13",
-        "https://example.com/news/update-13-1"
+        "https://example.com/news/event-16",
+        "https://example.com/news/update-16-56"
       ],
-      "last_run": "2025-07-02T13:01:29.497551"
+      "last_run": "2025-07-02T16:56:20.648350"
+    },
+    "league_of_legends": {
+      "seen_urls": [
+        "https://teamfighttactics.leagueoflegends.com/fr-fr/news/game-updates/teamfight-tactics-patch-14-7-notes-2025/",
+        "https://teamfighttactics.leagueoflegends.com/fr-fr/news/esports/cyber-city-tacticians-crown-primer/",
+        "https://merch.riotgames.com/product/msi-2025-coach-jacket/?utm_source=leagueoflegends.com&utm_medium=referral&utm_campaign=lol-newsfeed-msi25",
+        "https://lolesports.com/fr-fr/news/lec-summer-primer-finals-in-madrid-await",
+        "https://merch.riotgames.com/product/msi-2025-hockey-jersey/?utm_source=leagueoflegends.com&utm_medium=referral&utm_campaign=lol-newsfeed-msi25",
+        "https://www.leagueoflegends.com/fr-fr/news/community/blossom-blade-aram-challenge",
+        "https://www.youtube.com/watch?v=rKI_AVjKvbY",
+        "https://www.leagueoflegends.com/fr-fr/news/game-updates/yunara-abilities-rundown",
+        "https://www.youtube.com/watch?v=3LgQWl5SLYI",
+        "https://www.youtube.com/watch?v=QF9WsfDnNLk",
+        "https://www.leagueoflegends.com/fr-fr/news/game-updates/patch-25-13-notes",
+        "https://www.youtube.com/watch?v=AmXdlYgnLDg"
+      ],
+      "last_run": "2025-07-02T17:17:39.438167"
     }
   },
   "articles": {
+    "https://example.com/news/update-16-56": {
+      "title": "Test Gaming News: New Update 16:56",
+      "first_seen": "2025-07-02T16:56:20.648350",
+      "last_seen": "2025-07-02T16:56:20.648350",
+      "scraper": "test_scraper"
+    },
+    "https://example.com/news/event-16": {
+      "title": "Test Gaming News: Event Announcement 16",
+      "first_seen": "2025-07-02T16:56:20.648350",
+      "last_seen": "2025-07-02T16:56:20.648350",
+      "scraper": "test_scraper"
+    },
+    "https://teamfighttactics.leagueoflegends.com/fr-fr/news/esports/cyber-city-tacticians-crown-primer/": {
+      "title": "[E-sport] Présentation de la Tactician's Crown Cyber CityDécouvrez la Tactician's Crown Cyber City",
+      "first_seen": "2025-07-02T17:17:39.438167",
+      "last_seen": "2025-07-02T17:17:39.438167",
+      "scraper": "league_of_legends"
+    },
+    "https://www.youtube.com/watch?v=3LgQWl5SLYI": {
+      "title": "[E-sport] Cyber City : Tactician’s Crown40 concurrents. Une couronne. Qui sera le big boss de Cyber City ?",
+      "first_seen": "2025-07-02T17:17:39.438167",
+      "last_seen": "2025-07-02T17:17:39.438167",
+      "scraper": "league_of_legends"
+    },
     "https://merch.riotgames.com/product/msi-2025-coach-jacket/?utm_source=leagueoflegends.com&utm_medium=referral&utm_campaign=lol-newsfeed-msi25": {
       "title": "[Produits dérivés] Blouson de coach MSI 2025Soutenez votre région dans la gloire et la fierté avec le blouson de coach MSI 2025 !",
-      "first_seen": "2025-07-02T12:49:21.826794",
-      "last_seen": "2025-07-02T12:49:21.826794",
+      "first_seen": "2025-07-02T17:17:39.438167",
+      "last_seen": "2025-07-02T17:17:39.438167",
       "scraper": "league_of_legends"
     },
     "https://www.leagueoflegends.com/fr-fr/news/community/blossom-blade-aram-challenge": {
       "title": "[Communauté] Blossom & Blade - ARAM ChallengeLa beauté de l'amitié et de la communauté s'invitent dans le chaos d'ARAM avec nos défis FTW : ARAM.",
-      "first_seen": "2025-07-02T12:49:21.826794",
-      "last_seen": "2025-07-02T12:49:21.826794",
+      "first_seen": "2025-07-02T17:17:39.438167",
+      "last_seen": "2025-07-02T17:17:39.438167",
       "scraper": "league_of_legends"
     },
     "https://www.youtube.com/watch?v=QF9WsfDnNLk": {
       "title": "[Média] Musique Morgana fleur spirituelleLe bosquet s'anime lorsque sa Mère s'éveille.",
-      "first_seen": "2025-07-02T12:49:21.826794",
-      "last_seen": "2025-07-02T12:49:21.826794",
+      "first_seen": "2025-07-02T17:17:39.438167",
+      "last_seen": "2025-07-02T17:17:39.438167",
       "scraper": "league_of_legends"
     },
     "https://lolesports.com/fr-fr/news/lec-summer-primer-finals-in-madrid-await": {
       "title": "[E-sport] Présentation du segment d'été du LEC : Préparez-vous pour la finale à Madrid !Plongez dans le nouveau segment d'été : format, arrivée de NAVI et qualifications pour les Worlds lors de la finale à Madrid.",
-      "first_seen": "2025-07-02T12:49:21.826794",
-      "last_seen": "2025-07-02T12:49:21.826794",
+      "first_seen": "2025-07-02T17:17:39.438167",
+      "last_seen": "2025-07-02T17:17:39.438167",
       "scraper": "league_of_legends"
     },
     "https://www.youtube.com/watch?v=rKI_AVjKvbY": {
       "title": "[Actualités] Présentation d'Orianna fleur spirituelle chibiOrianna fleur spirituelle chibi est là pour remettre les pendules à l'heure !",
-      "first_seen": "2025-07-02T12:49:21.826794",
-      "last_seen": "2025-07-02T12:49:21.826794",
+      "first_seen": "2025-07-02T17:17:39.438167",
+      "last_seen": "2025-07-02T17:17:39.438167",
       "scraper": "league_of_legends"
     },
     "https://www.youtube.com/watch?v=AmXdlYgnLDg": {
       "title": "[Actualités] Bande-annonce de lancement de l'acte 2Les mondes entrent en collision et des mythes oubliés prennent vie. L'acte 2 commence.",
-      "first_seen": "2025-07-02T12:49:21.826794",
-      "last_seen": "2025-07-02T12:49:21.826794",
+      "first_seen": "2025-07-02T17:17:39.438167",
+      "last_seen": "2025-07-02T17:17:39.438167",
       "scraper": "league_of_legends"
     },
     "https://merch.riotgames.com/product/msi-2025-hockey-jersey/?utm_source=leagueoflegends.com&utm_medium=referral&utm_campaign=lol-newsfeed-msi25": {
       "title": "[Produits dérivés] Maillot de hockey MSI 2025Travaillez votre style sur la glace, mais pas que, avec le maillot de hokey officiel MSI 2025 !",
-      "first_seen": "2025-07-02T12:49:21.826794",
-      "last_seen": "2025-07-02T12:49:21.826794",
+      "first_seen": "2025-07-02T17:17:39.438167",
+      "last_seen": "2025-07-02T17:17:39.438167",
       "scraper": "league_of_legends"
     },
     "https://teamfighttactics.leagueoflegends.com/fr-fr/news/game-updates/teamfight-tactics-patch-14-7-notes-2025/": {
       "title": "[Actualités] Notes de patch 14.7 Teamfight Tactics (2025)Le patch 14.7 est un patch d'équilibrage plus léger pour Cyber City, et orienté vers la scène compétitive, puisqu'il sera joué lors de plusieurs événements tels que la Tactician's Crown du set (du 11 au 13 juillet). Bien que les changements soient légers pour Cyber City, nous apportons aussi des modifications de taille au mode Double Up. Et nos autres modes ne seront pas délaissés, car nous apportons  des équilibrages à la Fiesta de Pengu et au retour de set : Mega Remix !",
-      "first_seen": "2025-07-02T12:49:21.826794",
-      "last_seen": "2025-07-02T12:49:21.826794",
+      "first_seen": "2025-07-02T17:17:39.438167",
+      "last_seen": "2025-07-02T17:17:39.438167",
       "scraper": "league_of_legends"
     },
     "https://www.leagueoflegends.com/fr-fr/news/game-updates/patch-25-13-notes": {
       "title": "[Actualités] Notes de patch 25.13La floraison sauvage s'invite dans la discussion pour le patch 25.13 🪷",
-      "first_seen": "2025-07-02T12:49:21.826794",
-      "last_seen": "2025-07-02T12:49:21.826794",
+      "first_seen": "2025-07-02T17:17:39.438167",
+      "last_seen": "2025-07-02T17:17:39.438167",
       "scraper": "league_of_legends"
     },
     "https://www.leagueoflegends.com/fr-fr/news/game-updates/yunara-abilities-rundown": {
       "title": "[Actualités] Présentation des compétences de YunaraYunara, Foi inébranlable, arrive dans le patch 25.14",
-      "first_seen": "2025-07-02T12:49:21.826794",
-      "last_seen": "2025-07-02T12:49:21.826794",
+      "first_seen": "2025-07-02T17:17:39.438167",
+      "last_seen": "2025-07-02T17:17:39.438167",
       "scraper": "league_of_legends"
-    },
-    "https://www.youtube.com/watch?v=OgjxlUqbhm4": {
-      "title": "[Actualités] Focus sur YunaraLibérez pleinement votre énergie spirituelle avec Yunara, Foi inébranlable.",
-      "first_seen": "2025-07-02T12:49:21.826794",
-      "last_seen": "2025-07-02T12:49:21.826794",
-      "scraper": "league_of_legends"
-    },
-    "https://merch.riotgames.com/collection/MSI-2025/?utm_source=leagueoflegends.com&utm_medium=referral&utm_campaign=lol-newsfeed-msi25": {
-      "title": "[Produits dérivés] Produits dérivés MSI 2025Rivalités, rédemption et beau jeu vous attendent avec les produits dérivés officiels MSI 2025 !",
-      "first_seen": "2025-07-02T12:49:21.826794",
-      "last_seen": "2025-07-02T12:49:21.826794",
-      "scraper": "league_of_legends"
-    },
-    "https://example.com/news/update-13-1": {
-      "title": "Test Gaming News: New Update 13:01",
-      "first_seen": "2025-07-02T13:01:29.497551",
-      "last_seen": "2025-07-02T13:01:29.497551",
-      "scraper": "test_scraper"
-    },
-    "https://example.com/news/event-13": {
-      "title": "Test Gaming News: Event Announcement 13",
-      "first_seen": "2025-07-02T13:01:29.497551",
-      "last_seen": "2025-07-02T13:01:29.497551",
-      "scraper": "test_scraper"
     }
   }
 }

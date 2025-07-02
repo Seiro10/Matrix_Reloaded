@@ -10,9 +10,9 @@ class Settings(BaseSettings):
     s3_region: str = "us-east-1"
 
     # Redis/Queue Configuration
-    redis_url: str = "redis://localhost:6379/0"
-    celery_broker_url: str = "redis://localhost:6379/0"
-    celery_result_backend: str = "redis://localhost:6379/0"
+    redis_url: str = "redis://redis:6379/0"
+    celery_broker_url: str = "redis://redis:6379/0"
+    celery_result_backend: str = "redis://redis:6379/0"
 
     # Concurrency Settings
     max_concurrent_scrapers: int = 5
@@ -24,7 +24,10 @@ class Settings(BaseSettings):
     rss_description: str = "Latest gaming news from various sources"
     rss_link: str = "http://localhost:8086"
 
-    # Copywriter API
+    # Router Agent API - UPDATED
+    router_agent_url: str = "http://matrix_reloaded-router-agent-1:8080"  # Use container name
+
+    # Copywriter API (keep existing for compatibility)
     copywriter_api_url: str = "http://localhost:8083/copywriter"
 
     # Logging
