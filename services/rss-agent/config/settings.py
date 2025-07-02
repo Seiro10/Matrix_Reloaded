@@ -25,7 +25,7 @@ class Settings(BaseSettings):
     rss_link: str = "http://localhost:8086"
 
     # Router Agent API - UPDATED
-    router_agent_url: str = "http://matrix_reloaded-router-agent-1:8080"  # Use container name
+    router_agent_url: str = "http://router-agent:8080"
 
     # Copywriter API (keep existing for compatibility)
     copywriter_api_url: str = "http://localhost:8083/copywriter"

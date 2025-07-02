@@ -119,6 +119,66 @@ services:
     depends_on:
       - copywriter-agent
 
+  rss-agent:
+    build:
+      context: ./services/rss-agent
+      dockerfile: Dockerfile
+    ports:
+      - "8086:8086"
+    environment:
+      - ENVIRONMENT=production
+      - PORT=8086
+      - REDIS_URL=redis://rss-redis:6379/0
+      - CELERY_BROKER_URL=redis://rss-redis:6379/0
+      - CELERY_RESULT_BACKEND=redis://rss-redis:6379/0
+      - ROUTER_AGENT_URL=http://router-agent:8080
+    volumes:
+      - rss_agent_logs:/app/logs
+      - rss_agent_data:/app/data
+    restart: unless-stopped
+    healthcheck:
+      test: [ "CMD", "curl", "-f", "http://localhost:8086/health" ]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+    networks:
+      - content-agents
+    depends_on:
+      - router-agent
+
+    # Redis for RSS Agent
+  rss-redis:
+    image: redis:7-alpine
+    networks:
+      - content-agents
+    healthcheck:
+      test: [ "CMD-SHELL", "redis-cli ping" ]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+    # RSS Agent Worker
+  rss-worker:
+    build:
+      context: ./services/rss-agent
+      dockerfile: Dockerfile
+    command: celery -A core.queue_manager.celery_app worker --loglevel=info --queues=scraping,processing,uploads --concurrency=2
+    environment:
+      - ENVIRONMENT=production
+      - REDIS_URL=redis://rss-redis:6379/0
+      - CELERY_BROKER_URL=redis://rss-redis:6379/0
+      - CELERY_RESULT_BACKEND=redis://rss-redis:6379/0
+      - ROUTER_AGENT_URL=http://router-agent:8080
+    volumes:
+      - rss_agent_logs:/app/logs
+      - rss_agent_data:/app/data
+    restart: unless-stopped
+    networks:
+      - content-agents
+    depends_on:
+      - rss-redis
+
   # Content Finder Agent
   content-finder:
     build:
@@ -176,6 +236,10 @@ volumes:
   metadata_generator_logs:
     driver: local
   metadata_generator_temp:
+    driver: local
+  rss_agent_logs:
+    driver: local
+  rss_agent_data:
     driver: local
 
 networks:
