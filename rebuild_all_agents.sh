@@ -44,6 +44,8 @@ SERVICES=(
     "rewriter-main:8085"
     "copywriter-agent:8083"
     "metadata-generator:8084"
+    "rss-agent:8086"
+    "rss-redis:6380"
 )
 
 echo "Services to rebuild:"
@@ -53,30 +55,56 @@ for service in "${SERVICES[@]}"; do
 done
 echo ""
 
-# Stop all services
 log_info "🛑 Stopping all services..."
 docker compose down
 
-# Remove all related containers (cleanup any orphaned containers)
-log_info "🧹 Cleaning up any orphaned containers..."
-docker stop deployment-rewriter-agent-1 2>/dev/null || true
-docker stop deployment-rewriter-main-1 2>/dev/null || true
-docker stop router-agent-router-agent-1 2>/dev/null || true
-docker stop agents-content-finder-content-finder-1 2>/dev/null || true
-docker stop agents-copywriter-copywriter-agent-1 2>/dev/null || true
-docker stop metadata-generator-metadata-generator-1 2>/dev/null || true
-docker stop matrix_reloaded-metadata-agent-1 2>/dev/null || true
-docker rm deployment-rewriter-agent-1 2>/dev/null || true
-docker rm deployment-rewriter-main-1 2>/dev/null || true
-docker rm router-agent-router-agent-1 2>/dev/null || true
-docker rm agents-content-finder-content-finder-1 2>/dev/null || true
-docker rm agents-copywriter-copywriter-agent-1 2>/dev/null || true
-docker rm metadata-generator-metadata-generator-1 2>/dev/null || true
-docker rm matrix_reloaded-metadata-agent-1 2>/dev/null || true
+# Stop RSS agent if it exists
+if [ -f "services/rss-agent/docker-compose.yml" ]; then
+    log_info "🛑 Stopping RSS agent..."
+    cd services/rss-agent
+    docker compose down
+    cd ../..
+fi
 
-# Additional cleanup for any containers using ports we need
+# Force stop all containers that might be using our networks
+log_info "🧹 Force stopping all related containers..."
+docker ps -a --format "table {{.Names}}" | grep -E "(content-finder|router-agent|copywriter|metadata|rewriter|rss)" | xargs -r docker stop 2>/dev/null || true
+docker ps -a --format "table {{.Names}}" | grep -E "(content-finder|router-agent|copywriter|metadata|rewriter|rss)" | xargs -r docker rm 2>/dev/null || true
+
+# Remove containers by pattern
+docker rm -f $(docker ps -aq --filter "name=content-finder") 2>/dev/null || true
+docker rm -f $(docker ps -aq --filter "name=router-agent") 2>/dev/null || true
+docker rm -f $(docker ps -aq --filter "name=copywriter") 2>/dev/null || true
+docker rm -f $(docker ps -aq --filter "name=metadata") 2>/dev/null || true
+docker rm -f $(docker ps -aq --filter "name=rewriter") 2>/dev/null || true
+docker rm -f $(docker ps -aq --filter "name=rss") 2>/dev/null || true
+
+# Check for containers still using networks and force remove them
+log_info "🔍 Checking for containers using our networks..."
+for network in "matrix_reloaded_content-agents" "content-agents" "router-agent_default" "agents-content-finder_default" "agents-content-finder_agent_network"; do
+    if docker network inspect $network >/dev/null 2>&1; then
+        log_info "Disconnecting all containers from network: $network"
+        # Get container IDs connected to this network
+        CONTAINER_IDS=$(docker network inspect $network --format '{{range $id, $v := .Containers}}{{printf "%s " $id}}{{end}}' 2>/dev/null || true)
+        if [ ! -z "$CONTAINER_IDS" ]; then
+            for container_id in $CONTAINER_IDS; do
+                docker network disconnect -f $network $container_id 2>/dev/null || true
+            done
+        fi
+    fi
+done
+
+# Additional cleanup for any orphaned containers
+docker stop deployment-rewriter-agent-1 deployment-rewriter-main-1 router-agent-router-agent-1 agents-content-finder-content-finder-1 agents-copywriter-copywriter-agent-1 metadata-generator-metadata-generator-1 matrix_reloaded-metadata-agent-1 2>/dev/null || true
+docker rm deployment-rewriter-agent-1 deployment-rewriter-main-1 router-agent-router-agent-1 agents-content-finder-content-finder-1 agents-copywriter-copywriter-agent-1 metadata-generator-metadata-generator-1 matrix_reloaded-metadata-agent-1 2>/dev/null || true
+
+# Remove all networks
+log_info "🌐 Removing all related networks..."
+docker network rm matrix_reloaded_content-agents content-agents router-agent_default agents-content-finder_default agents-content-finder_agent_network agents-copywriter_default metadata-generator_default rss-agent_rss_network 2>/dev/null || true
+
+# Additional cleanup for port conflicts
 log_info "🔍 Checking for port conflicts..."
-for port in 8000 8080 8083 8084 8085; do
+for port in 8000 8080 8083 8084 8085 8086; do
   CONTAINER_ID=$(docker ps -q --filter publish=$port)
   if [ ! -z "$CONTAINER_ID" ]; then
     log_warn "Found container using port $port: $CONTAINER_ID"
@@ -91,17 +119,13 @@ log_info "🗑️ Removing existing images..."
 docker compose down --rmi all 2>/dev/null || true
 
 # Additional cleanup for any remaining images
-docker rmi deployment-rewriter-agent 2>/dev/null || true
-docker rmi deployment-rewriter-main 2>/dev/null || true
-docker rmi router-agent-router-agent 2>/dev/null || true
-docker rmi agents-content-finder-content-finder 2>/dev/null || true
-docker rmi agents-copywriter-copywriter-agent 2>/dev/null || true
-docker rmi metadata-generator 2>/dev/null || true
+docker rmi deployment-rewriter-agent deployment-rewriter-main router-agent-router-agent agents-content-finder-content-finder agents-copywriter-copywriter-agent metadata-generator matrix_reloaded-rss-agent 2>/dev/null || true
 
 # Clean up dangling images and volumes
 log_info "🧹 Cleaning up dangling resources..."
 docker image prune -f
 docker volume prune -f
+docker network prune -f
 
 # Build all services
 log_blue "🔨 Building all services..."
