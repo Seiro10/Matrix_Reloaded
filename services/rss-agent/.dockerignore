@@ -1,0 +1,50 @@
+# .dockerignore
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+MANIFEST
+
+# Logs and data directories
+logs/
+data/
+*.log
+
+# Docker files
+Dockerfile*
+docker-compose*.yml
+.dockerignore
+
+# Git
+.git/
+.gitignore
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Scripts
+*.sh
+rebuild_*.sh

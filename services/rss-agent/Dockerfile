@@ -8,7 +8,6 @@ RUN apt-get update && apt-get install -y \
     gcc \
     g++ \
     curl \
-    wget \
     && rm -rf /var/lib/apt/lists/*
 
 # Copy requirements first for better caching
@@ -17,14 +16,21 @@ COPY requirements.txt .
 # Install Python dependencies
 RUN pip install --no-cache-dir -r requirements.txt
 
-# Copy application code directly (since it's in root)
-COPY . .
+# Copy application code
+COPY config/ ./config/
+COPY core/ ./core/
+COPY models/ ./models/
+COPY scrapers/ ./scrapers/
+COPY services/ ./services/
+COPY main.py .
 
-# Set Python path to current directory
+RUN useradd -m -u 1000 rssuser
+
+RUN mkdir -p /app/data && chown -R rssuser:rssuser /app
+
+# Set Python path
 ENV PYTHONPATH=/app
 
-# Create non-root user
-RUN useradd -m -u 1000 rssuser && chown -R rssuser:rssuser /app
 USER rssuser
 
 # Health check

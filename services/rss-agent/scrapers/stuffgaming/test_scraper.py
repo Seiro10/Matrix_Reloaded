@@ -2,6 +2,7 @@ from typing import List
 from datetime import datetime
 from scrapers.base_scraper import BaseScraper
 from models.schemas import NewsItem
+from models.tracking import ScrapingTracker
 import logging
 
 logger = logging.getLogger(__name__)
@@ -14,38 +15,57 @@ class TestScraper(BaseScraper):
             website_name="Test Gaming Site",
             theme="Gaming"
         )
+        # ✅ Ajouter le tracker
+        self.tracker = ScrapingTracker()
 
     def scrape_news(self) -> List[NewsItem]:
-        """Create test news items to verify the pipeline"""
+        """Create test news items to verify the pipeline - only new ones"""
         logger.info(f"[DEBUG] Creating test news items for {self.website_name}")
 
-        news_items = [
+        # Create different articles based on current time to simulate new content
+        current_hour = datetime.now().hour
+        current_minute = datetime.now().minute
+
+        all_news_items = [
             NewsItem(
-                title="Test Gaming News: New Champions Released",
-                content="This is a test article about new champions being released in the game. The article contains detailed information about their abilities and gameplay mechanics.",
+                title=f"Test Gaming News: New Update {current_hour}:{current_minute:02d}",
+                content=f"This is a test article about a new update released at {current_hour}:{current_minute:02d}. The article contains detailed information about new features and improvements.",
                 images=[
                     "https://picsum.photos/400/300?random=1",
                     "https://picsum.photos/400/300?random=2"
                 ],
                 website=self.website_name,
-                destination_website="Test Gaming Site",
+                destination_website="Stuffgaming",
                 theme=self.theme,
-                url="https://example.com/news/new-champions",
+                url=f"https://example.com/news/update-{current_hour}-{current_minute}",
                 published_date=datetime.now()
             ),
             NewsItem(
-                title="Test Gaming News: Major Game Update",
-                content="A major update has been released with new features, bug fixes, and balance changes. Players can expect improved performance and new gameplay options.",
+                title=f"Test Gaming News: Event Announcement {current_hour}",
+                content=f"A special event has been announced for hour {current_hour}. Players can expect new challenges and rewards during this limited-time event.",
                 images=[
                     "https://picsum.photos/400/300?random=3"
                 ],
                 website=self.website_name,
-                destination_website="Test Gaming Site",
+                destination_website="Stuffgaming",
                 theme=self.theme,
-                url="https://example.com/news/major-update",
+                url=f"https://example.com/news/event-{current_hour}",
                 published_date=datetime.now()
             )
         ]
 
-        logger.info(f"[DEBUG] Created {len(news_items)} test news items")
-        return news_items
+        # ✅ Filter for new articles only
+        articles_data = [item.model_dump() for item in all_news_items]
+        new_articles_data = self.tracker.filter_new_articles("test_scraper", articles_data)
+
+        logger.info(f"[DEBUG] New test articles: {len(new_articles_data)} out of {len(articles_data)}")
+
+        # Convert back to NewsItem objects
+        new_news_items = [NewsItem(**article_data) for article_data in new_articles_data]
+
+        # ✅ Mark articles as seen
+        if articles_data:
+            self.tracker.mark_articles_as_seen("test_scraper", articles_data)
+            logger.info(f"[DEBUG] Marked {len(articles_data)} test articles as seen")
+
+        return new_news_items

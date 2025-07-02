@@ -162,6 +162,134 @@ async def debug_scrape(scraper_name: str):
         return {"error": str(e)}
 
 
+@app.get("/tracking/stats")
+async def get_tracking_stats():
+    """Get tracking statistics for all scrapers"""
+    try:
+        from models.tracking import ScrapingTracker
+        tracker = ScrapingTracker()
+        return tracker.get_stats()
+    except Exception as e:
+        return {"error": str(e)}
+
+
+@app.get("/tracking/stats/{scraper_name}")
+async def get_scraper_stats(scraper_name: str):
+    """Get tracking statistics for a specific scraper"""
+    try:
+        from models.tracking import ScrapingTracker
+        tracker = ScrapingTracker()
+        return tracker.get_stats(scraper_name)
+    except Exception as e:
+        return {"error": str(e)}
+
+
+@app.post("/tracking/reset/{scraper_name}")
+async def reset_scraper_tracking(scraper_name: str):
+    """Reset tracking for a specific scraper (for testing)"""
+    try:
+        from models.tracking import ScrapingTracker
+        tracker = ScrapingTracker()
+
+        # Remove scraper data
+        if scraper_name in tracker.data["scrapers"]:
+            del tracker.data["scrapers"][scraper_name]
+
+        # Remove articles from this scraper
+        articles_to_remove = [
+            url for url, data in tracker.data["articles"].items()
+            if data.get("scraper") == scraper_name
+        ]
+
+        for url in articles_to_remove:
+            del tracker.data["articles"][url]
+
+        tracker._save_data()
+
+        return {
+            "message": f"Reset tracking for {scraper_name}",
+            "removed_articles": len(articles_to_remove)
+        }
+    except Exception as e:
+        return {"error": str(e)}
+
+
+@app.get("/tracking/new-check/{scraper_name}")
+async def simulate_new_check(scraper_name: str):
+    """Simulate checking for new articles without processing them"""
+    try:
+        if scraper_name == "league_of_legends":
+            from scrapers.stuffgaming.league_of_legends import LeagueOfLegendsScraper
+            scraper = LeagueOfLegendsScraper()
+        elif scraper_name == "test_scraper":
+            from scrapers.stuffgaming.test_scraper import TestScraper
+            scraper = TestScraper()
+        else:
+            return {"error": f"Unknown scraper: {scraper_name}"}
+
+        # Get all articles
+        news_items = scraper.scrape_news()
+
+        return {
+            "scraper": scraper_name,
+            "new_articles_found": len(news_items),
+            "articles": [
+                {
+                    "title": item.title,
+                    "url": item.url,
+                    "published_date": item.published_date.isoformat()
+                }
+                for item in news_items
+            ]
+        }
+    except Exception as e:
+        return {"error": str(e)}
+
+
+@app.get("/debug/tracking-file")
+async def debug_tracking_file():
+    """Debug tracking file location and content"""
+    try:
+        from models.tracking import ScrapingTracker
+        import os
+
+        tracker = ScrapingTracker()
+        debug_info = tracker.get_debug_info()
+
+        return {
+            **debug_info,
+            "current_data": tracker.data,
+            "data_keys": list(tracker.data.keys()) if tracker.data else None
+        }
+    except Exception as e:
+        return {"error": str(e)}
+
+
+@app.post("/debug/force-tracking-save")
+async def force_tracking_save():
+    """Force save tracking data for debugging"""
+    try:
+        from models.tracking import ScrapingTracker
+
+        tracker = ScrapingTracker()
+
+        # Add some test data
+        test_articles = [
+            {
+                "url": "https://test.com/article1",
+                "title": "Test Article 1"
+            }
+        ]
+
+        tracker.mark_articles_as_seen("debug_test", test_articles)
+
+        return {
+            "message": "Forced tracking save completed",
+            "stats": tracker.get_stats()
+        }
+    except Exception as e:
+        return {"error": str(e)}
+
 if __name__ == "__main__":
     import uvicorn
 
