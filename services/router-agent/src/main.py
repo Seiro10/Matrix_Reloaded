@@ -13,7 +13,16 @@ from typing import Optional, Dict, Any, List
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
-from models import ContentFinderOutput, RouterResponse, SiteInfo, OutputPayload, RoutingMetadata, SERPAnalysis, SimilarKeyword
+from models import (
+    ContentFinderOutput,
+    RouterResponse,
+    SiteInfo,
+    OutputPayload,
+    RoutingMetadata,
+    SERPAnalysis,
+    SimilarKeyword,
+    RSSPayload
+)
 
 from agent import (
     create_human_in_the_loop_router_agent,
@@ -997,6 +1006,91 @@ async def get_available_sites():
         ]
     }
 
+
+@app.post("/rss-route")
+async def route_from_rss(rss_payload: RSSPayload):
+    """
+    Route endpoint specifically for RSS Agent - bypasses routing decision
+    Always sends to metadata-generator (copywriter path)
+    """
+    try:
+        keyword = rss_payload.title  # Use title as keyword
+        logger.info(f"🔄 Processing RSS payload for title: {keyword}")
+
+        # Get default site (first site from config)
+        from config import WEBSITES
+        selected_site = WEBSITES[0]  # Default to first site
+
+        logger.info(f"✍️ CALLING METADATA GENERATOR FOR RSS CONTENT")
+        logger.info(f"Title: {keyword}")
+        logger.info(f"Destination: {rss_payload.destination_website}")
+        logger.info("=" * 50)
+
+        # Create CSV file for metadata generator using RSS-specific function
+        from agent import create_csv_for_rss_content
+        csv_file = create_csv_for_rss_content(rss_payload)
+
+        if csv_file:
+            agent_response = call_metadata_generator_sync(csv_file, keyword)
+        else:
+            agent_response = {
+                "success": False,
+                "error": "Failed to create CSV file for RSS content"
+            }
+
+        # Create response payload
+        output_payload = {
+            "agent_target": "copywriter",
+            "keyword": keyword,
+            "site_config": SiteInfo(
+                site_id=selected_site.site_id,
+                name=rss_payload.destination_website,
+                domain=selected_site.domain,
+                niche=selected_site.niche,
+                theme=selected_site.theme,
+                language=selected_site.language,
+                sitemap_url=selected_site.sitemap_url,
+                wordpress_api_url=selected_site.wordpress_api_url
+            ),
+            "serp_analysis": SERPAnalysis(top_results=[], people_also_ask=[]),
+            "similar_keywords": [],
+            "internal_linking_suggestions": [],
+            "routing_metadata": RoutingMetadata(
+                confidence_score=1.0,  # High confidence for RSS content
+                content_source="rss_agent",
+                timestamp=datetime.now().isoformat()
+            ),
+            "existing_content": None,
+            "llm_reasoning": f"RSS content from {rss_payload.website} routed to {rss_payload.destination_website}",
+            "agent_response": agent_response
+        }
+
+        return RouterResponse(
+            success=agent_response.get("success", False),
+            routing_decision="copywriter",
+            selected_site=SiteInfo(
+                site_id=selected_site.site_id,
+                name=rss_payload.destination_website,
+                domain=selected_site.domain,
+                niche=selected_site.niche,
+                theme=selected_site.theme,
+                language=selected_site.language,
+                sitemap_url=selected_site.sitemap_url,
+                wordpress_api_url=selected_site.wordpress_api_url
+            ),
+            confidence_score=1.0,
+            reasoning=f"RSS content from {rss_payload.website} routed directly to metadata-generator",
+            payload=OutputPayload(**output_payload) if agent_response.get("success") else None,
+            internal_linking_suggestions=[],
+            error=agent_response.get("error") if not agent_response.get("success") else None,
+            is_llm_powered=False,  # This is direct routing, not LLM-based
+            is_human_validated=False,
+            agent_response=agent_response
+        )
+
+    except Exception as e:
+        logger.error(f"❌ RSS route endpoint error: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
 
 if __name__ == "__main__":
     import uvicorn

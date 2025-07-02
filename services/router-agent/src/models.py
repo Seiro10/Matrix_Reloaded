@@ -133,6 +133,18 @@ class KeywordData(BaseModel):
     total_results_found: int = 0
 
 
+# RSS Agent Integration Models
+class RSSPayload(BaseModel):
+    """Payload from RSS Agent to Router Agent"""
+    title: str
+    content: str
+    images: List[str]
+    website: str
+    destination_website: str
+    theme: str
+    url: str
+    s3_image_urls: List[str] = []
+
 class ContentFinderOutput(BaseModel):
     keywords_data: Dict[str, KeywordData]
 

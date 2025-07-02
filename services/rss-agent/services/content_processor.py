@@ -1,6 +1,7 @@
 from typing import List, Optional
 from models.schemas import NewsItem, CopywriterPayload
 from services.s3_service import S3Service
+import requests  # Add this import at the top
 import logging
 
 logger = logging.getLogger(__name__)
@@ -78,11 +79,58 @@ class ContentProcessor:
         return "Unknown reason"
 
     def send_to_copywriter(self, payload: CopywriterPayload):
-        """Send payload to copywriter (for now just print)"""
+        """Send payload to router agent for processing"""
         if payload is None:
-            logger.info("[DEBUG] === ARTICLE SKIPPED - NOT SENDING TO COPYWRITER ===")
+            logger.info("[DEBUG] === ARTICLE SKIPPED - NOT SENDING TO ROUTER ===")
             return
 
-        logger.info("[DEBUG] === SENDING TO COPYWRITER ===")
-        logger.info(f"[DEBUG] PAYLOAD: {payload.model_dump_json(indent=2)}")
-        logger.info("[DEBUG] === END COPYWRITER PAYLOAD ===")
+        try:
+            from config.settings import settings
+
+            # Get router agent URL from settings
+            router_url = getattr(settings, 'router_agent_url', 'http://localhost:8080')
+
+            # Transform CopywriterPayload to RSSPayload format expected by router
+            rss_payload = {
+                "title": payload.title,
+                "content": payload.content,
+                "images": payload.images,
+                "website": payload.website,
+                "destination_website": payload.destination_website,
+                "theme": payload.theme,
+                "url": payload.url,
+                "s3_image_urls": payload.s3_image_urls
+            }
+
+            logger.info("[DEBUG] === SENDING TO ROUTER AGENT ===")
+            logger.info(f"[DEBUG] Router URL: {router_url}/rss-route")
+            logger.info(f"[DEBUG] Payload title: {payload.title}")
+            logger.info(f"[DEBUG] Destination: {payload.destination_website}")
+
+            # Send to router agent
+            response = requests.post(
+                f"{router_url}/rss-route",
+                json=rss_payload,
+                headers={"Content-Type": "application/json"},
+                timeout=120  # 2 minute timeout
+            )
+
+            if response.status_code == 200:
+                result = response.json()
+                logger.info("[DEBUG] ✅ Successfully sent to router agent")
+                logger.info(f"[DEBUG] Router response: {result.get('success', False)}")
+                if result.get('agent_response'):
+                    logger.info(
+                        f"[DEBUG] Metadata generator status: {result['agent_response'].get('success', 'unknown')}")
+            else:
+                logger.error(f"[DEBUG] ❌ Router agent returned error: {response.status_code}")
+                logger.error(f"[DEBUG] Response: {response.text}")
+
+        except requests.exceptions.Timeout:
+            logger.error("[DEBUG] ❌ Timeout sending to router agent")
+        except requests.exceptions.ConnectionError:
+            logger.error(f"[DEBUG] ❌ Cannot connect to router agent at {router_url}")
+        except Exception as e:
+            logger.error(f"[DEBUG] ❌ Error sending to router agent: {e}")
+
+        logger.info("[DEBUG] === END ROUTER AGENT COMMUNICATION ===")
