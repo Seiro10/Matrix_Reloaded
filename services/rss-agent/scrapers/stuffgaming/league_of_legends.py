@@ -3,6 +3,7 @@ from datetime import datetime
 import re
 from scrapers.base_scraper import BaseScraper
 from models.schemas import NewsItem
+from models.tracking import ScrapingTracker
 from config.websites import get_destination_website
 import logging
 
@@ -16,18 +17,24 @@ class LeagueOfLegendsScraper(BaseScraper):
             website_name="League of Legends",
             theme="Gaming"
         )
+        # ✅ Ajouter le tracker
+        self.tracker = ScrapingTracker()
 
     def scrape_news(self) -> List[NewsItem]:
-        """Scrape League of Legends news"""
+        """Scrape League of Legends news - only new articles"""
         logger.info(f"[DEBUG] Starting scrape for {self.website_name}")
 
         try:
             soup = self.fetch_page(self.base_url)
             logger.info(f"[DEBUG] Successfully fetched main page: {self.base_url}")
 
-            news_items = []
+            # Get last run time
+            last_run = self.tracker.get_last_run("league_of_legends")
+            logger.info(f"[DEBUG] Last run was: {last_run}")
 
-            # Look for article links with specific classes
+            all_news_items = []
+
+            # Extract all articles first
             article_links = soup.find_all('a',
                                           class_=['sc-985df63-0', 'cGQgsO', 'sc-d043b2-0', 'bZMlAb', 'sc-86f2e710-5',
                                                   'eFeRux', 'action'])
@@ -50,14 +57,12 @@ class LeagueOfLegendsScraper(BaseScraper):
 
                 logger.info(f"[DEBUG] Fallback found {len(article_links)} news links")
 
-            # Limit to latest 5 articles
-            article_links = article_links[:5]
-
+            # Extract all articles
             for i, link in enumerate(article_links):
                 try:
                     news_item = self._extract_article_data(link, i)
                     if news_item and news_item.title and len(news_item.title) > 5:
-                        news_items.append(news_item)
+                        all_news_items.append(news_item)
                         logger.info(f"[DEBUG] Successfully extracted article {i + 1}: {news_item.title[:50]}...")
                     else:
                         logger.warning(f"[DEBUG] Skipped invalid article {i + 1}")
@@ -65,12 +70,28 @@ class LeagueOfLegendsScraper(BaseScraper):
                     logger.error(f"[DEBUG] Error extracting article {i + 1}: {e}")
                     continue
 
-            logger.info(f"[DEBUG] Total extracted articles: {len(news_items)}")
-            return news_items
+            logger.info(f"[DEBUG] Total extracted articles: {len(all_news_items)}")
+
+            # ✅ Filter for new articles only
+            articles_data = [item.model_dump() for item in all_news_items]
+            new_articles_data = self.tracker.filter_new_articles("league_of_legends", articles_data)
+
+            logger.info(f"[DEBUG] New articles found: {len(new_articles_data)} out of {len(articles_data)}")
+
+            # Convert back to NewsItem objects
+            new_news_items = [NewsItem(**article_data) for article_data in new_articles_data]
+
+            # ✅ Mark articles as seen (including the new ones)
+            if articles_data:  # Mark all articles as seen, not just new ones
+                self.tracker.mark_articles_as_seen("league_of_legends", articles_data)
+                logger.info(f"[DEBUG] Marked {len(articles_data)} articles as seen")
+
+            return new_news_items
 
         except Exception as e:
             logger.error(f"[DEBUG] Error in scrape_news: {e}")
             return []
+
 
     def _extract_article_data(self, link, index) -> NewsItem:
         """Extract data from a news link"""

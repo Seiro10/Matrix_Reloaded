@@ -37,8 +37,11 @@ class BaseScraper(ABC):
         """Extract image URLs from soup with better filtering"""
         images = []
 
-        # Look for various image attributes
-        img_attributes = ['src', 'data-src', 'data-lazy-src', 'data-original', 'data-srcset']
+        # Look for various image attributes including modern formats
+        img_attributes = [
+            'src', 'data-src', 'data-lazy-src', 'data-original',
+            'data-srcset', 'srcset', 'data-lazy', 'data-image'
+        ]
 
         img_tags = soup.find_all('img')
 
@@ -52,19 +55,36 @@ class BaseScraper(ABC):
                     break
 
             if src:
-                # Clean up srcset (take first URL)
-                if ',' in src:
-                    src = src.split(',')[0].strip().split(' ')[0]
+                # Handle srcset (take the largest image)
+                if 'srcset' in src or ',' in src:
+                    src_parts = src.split(',')
+                    # Take the last one (usually highest resolution)
+                    src = src_parts[-1].strip().split(' ')[0]
 
                 # Build full URL
                 if src.startswith('http'):
                     images.append(src)
                 elif base_url and src.startswith('/'):
                     images.append(f"{base_url.rstrip('/')}{src}")
+                elif base_url and src.startswith('./'):
+                    images.append(f"{base_url.rstrip('/')}/{src[2:]}")
                 elif base_url and not src.startswith('http'):
                     images.append(f"{base_url.rstrip('/')}/{src}")
 
-        # Filter out small icons, ads, etc.
+        # Also look for background images in style attributes
+        for element in soup.find_all(['div', 'section', 'header'], style=True):
+            style = element.get('style', '')
+            if 'background-image:' in style:
+                import re
+                bg_match = re.search(r'background-image:\s*url\(["\']?([^"\']+)["\']?\)', style)
+                if bg_match:
+                    bg_url = bg_match.group(1)
+                    if bg_url.startswith('http'):
+                        images.append(bg_url)
+                    elif base_url and bg_url.startswith('/'):
+                        images.append(f"{base_url.rstrip('/')}{bg_url}")
+
+        # Filter out invalid images
         filtered_images = []
         for img_url in images:
             if self._is_valid_image(img_url):
@@ -87,7 +107,7 @@ class BaseScraper(ABC):
         skip_keywords = [
             'icon', 'logo', 'avatar', 'thumb', 'ad', 'banner',
             'pixel', 'tracking', 'analytics', 'social', 'share',
-            '16x16', '32x32', '64x64', '1x1'
+            '16x16', '32x32', '64x64', '1x1', 'spacer'
         ]
 
         img_url_lower = img_url.lower()
@@ -100,11 +120,12 @@ class BaseScraper(ABC):
         if any(size in img_url_lower for size in ['16x16', '32x32', '1x1', '2x2']):
             return False
 
-        # Must be common image format
-        valid_extensions = ['.jpg', '.jpeg', '.png', '.webp', '.gif']
-        if not any(ext in img_url_lower for ext in valid_extensions):
-            # Check if URL has query params that might indicate an image
-            if '?' not in img_url:
-                return False
+        # Must be common image format (including modern formats)
+        valid_extensions = ['.jpg', '.jpeg', '.png', '.webp', '.gif', '.avif', '.svg']
+        has_valid_ext = any(ext in img_url_lower for ext in valid_extensions)
+
+        # If no extension, check if URL has query params that might indicate an image
+        if not has_valid_ext and '?' not in img_url:
+            return False
 
         return True

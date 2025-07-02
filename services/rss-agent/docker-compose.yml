@@ -1,3 +1,5 @@
+version: "3.9"
+
 services:
   redis:
     image: redis:7-alpine
@@ -7,7 +9,8 @@ services:
       - "6379:6379"
     volumes:
       - redis_data:/data
-    command: redis-server --appendonly yes --maxmemory 256mb --maxmemory-policy allkeys-lru
+    command: >
+      redis-server --appendonly yes --maxmemory 256mb --maxmemory-policy allkeys-lru
     healthcheck:
       test: ["CMD", "redis-cli", "ping"]
       interval: 10s
@@ -16,9 +19,9 @@ services:
     networks:
       - rss_network
     logging:
-      driver: "json-file"
+      driver: json-file
       options:
-        max-size: "10m"
+        max-size: 10m
         max-file: "3"
 
   rss-agent:
@@ -41,6 +44,8 @@ services:
         condition: service_healthy
     volumes:
       - ./logs:/app/logs
+      - ./data:/app/data
+    user: "1000:1000"
     networks:
       - rss_network
     healthcheck:
@@ -49,9 +54,9 @@ services:
       timeout: 10s
       retries: 3
     logging:
-      driver: "json-file"
+      driver: json-file
       options:
-        max-size: "10m"
+        max-size: 10m
         max-file: "3"
 
   celery-scraping:
@@ -71,18 +76,22 @@ services:
         condition: service_healthy
     volumes:
       - ./logs:/app/logs
+      - ./data:/app/data
+    user: "1000:1000"
     networks:
       - rss_network
-    command: celery -A core.queue_manager.celery_app worker --loglevel=info --queues=scraping --concurrency=2 --hostname=scraper@%h
+    command: >
+      celery -A core.queue_manager.celery_app worker --loglevel=info
+      --queues=scraping --concurrency=2 --hostname=scraper@%h
     healthcheck:
       test: ["CMD", "celery", "-A", "core.queue_manager.celery_app", "inspect", "ping"]
       interval: 30s
       timeout: 10s
       retries: 3
     logging:
-      driver: "json-file"
+      driver: json-file
       options:
-        max-size: "10m"
+        max-size: 10m
         max-file: "3"
 
   celery-processing:
@@ -93,7 +102,7 @@ services:
     restart: unless-stopped
     environment:
       - REDIS_URL=redis://redis:6379/0
-      - CELERY_BROKER_URL=redis://redis:6379/0
+      - CELERY_BROKER_URL=redis://redis:redis@6379/0
       - CELERY_RESULT_BACKEND=redis://redis:6379/0
     env_file:
       - .env
@@ -102,18 +111,22 @@ services:
         condition: service_healthy
     volumes:
       - ./logs:/app/logs
+      - ./data:/app/data
+    user: "1000:1000"
     networks:
       - rss_network
-    command: celery -A core.queue_manager.celery_app worker --loglevel=info --queues=processing --concurrency=4 --hostname=processor@%h
+    command: >
+      celery -A core.queue_manager.celery_app worker --loglevel=info
+      --queues=processing --concurrency=4 --hostname=processor@%h
     healthcheck:
       test: ["CMD", "celery", "-A", "core.queue_manager.celery_app", "inspect", "ping"]
       interval: 30s
       timeout: 10s
       retries: 3
     logging:
-      driver: "json-file"
+      driver: json-file
       options:
-        max-size: "10m"
+        max-size: 10m
         max-file: "3"
 
   celery-uploads:
@@ -133,18 +146,22 @@ services:
         condition: service_healthy
     volumes:
       - ./logs:/app/logs
+      - ./data:/app/data
+    user: "1000:1000"
     networks:
       - rss_network
-    command: celery -A core.queue_manager.celery_app worker --loglevel=info --queues=uploads --concurrency=10 --hostname=uploader@%h
+    command: >
+      celery -A core.queue_manager.celery_app worker --loglevel=info
+      --queues=uploads --concurrency=10 --hostname=uploader@%h
     healthcheck:
       test: ["CMD", "celery", "-A", "core.queue_manager.celery_app", "inspect", "ping"]
       interval: 30s
       timeout: 10s
       retries: 3
     logging:
-      driver: "json-file"
+      driver: json-file
       options:
-        max-size: "10m"
+        max-size: 10m
         max-file: "3"
 
   celery-flower:
@@ -164,17 +181,19 @@ services:
         condition: service_healthy
     networks:
       - rss_network
-    command: celery -A core.queue_manager.celery_app flower --port=5555 --broker=redis://redis:6379/0
+    command: >
+      celery -A core.queue_manager.celery_app flower --port=5555
+      --broker=redis://redis:6379/0
     healthcheck:
-      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:5555/api/workers", "||", "exit", "1"]
+      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:5555/api/workers"]
       interval: 30s
       timeout: 10s
       retries: 3
       start_period: 40s
     logging:
-      driver: "json-file"
+      driver: json-file
       options:
-        max-size: "10m"
+        max-size: 10m
         max-file: "3"
 
 volumes:
