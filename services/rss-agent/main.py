@@ -290,6 +290,29 @@ async def force_tracking_save():
     except Exception as e:
         return {"error": str(e)}
 
+
+@app.get("/debug/reset-all-tracking")
+async def reset_all_tracking():
+    """Reset all tracking data for debugging"""
+    try:
+        from models.tracking import ScrapingTracker
+        tracker = ScrapingTracker()
+
+        # Clear all data
+        tracker.data = {
+            "scrapers": {},
+            "articles": {}
+        }
+        tracker._save_data()
+
+        return {
+            "message": "All tracking data reset",
+            "scrapers_cleared": True,
+            "articles_cleared": True
+        }
+    except Exception as e:
+        return {"error": str(e)}
+
 if __name__ == "__main__":
     import uvicorn
 

@@ -4,10 +4,10 @@ WEBSITE_DESTINATIONS = {
     "League of Legends": "Stuffgaming",
     "IGN Gaming": "Stuffgaming",
     "Test Gaming Site": "Stuffgaming",
-    # Ajouter d'autres mappings ici au fur et à mesure
     "Valorant": "Stuffgaming",
     "TFT": "Stuffgaming",
     "Wild Rift": "Stuffgaming",
+    "Legends of Runeterra": "Stuffgaming",
 }
 
 def get_destination_website(source_website: str) -> str:

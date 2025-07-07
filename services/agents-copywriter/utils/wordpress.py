@@ -478,7 +478,7 @@ def post_article_to_wordpress(article_json: dict, jwt_token: str, html: str = No
         "content": html or "",
         "status": "private"
     }
-
+    res = None
     try:
         print(f"[DEBUG] ➕ Envoi de la création d'article vers {post_url}")
         res = requests.post(post_url, headers=headers, json=payload)
@@ -501,6 +501,7 @@ def get_jwt_token(username, password):
         "password": password
     }
 
+    res = None  # ADD THIS LINE
     try:
         print(f"[DEBUG] Requête POST vers {auth_url} avec user={username}")
         res = requests.post(auth_url, json=payload)
@@ -510,7 +511,7 @@ def get_jwt_token(username, password):
         return token
     except Exception as e:
         print(f"[ERROR] ❌ Échec de récupération du token JWT : {e}")
-        if res is not None:
+        if res is not None:  # This was failing before
             print(f"[DEBUG] ↪ Statut HTTP : {res.status_code}")
             print(f"[DEBUG] ↪ Réponse brute : {res.text}")
         return None

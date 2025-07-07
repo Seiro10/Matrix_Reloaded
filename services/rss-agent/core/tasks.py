@@ -24,11 +24,17 @@ def scrape_website(self, scraper_name: str):
         # Import here to avoid circular imports
         from scrapers.stuffgaming.league_of_legends import LeagueOfLegendsScraper
         from scrapers.stuffgaming.test_scraper import TestScraper
+        from scrapers.stuffgaming.riot_games_scraper import RiotGamesScraper
+        from scrapers.config.riot_sites import get_all_riot_sites
 
         scrapers = {
             'league_of_legends': LeagueOfLegendsScraper(),
             'test_scraper': TestScraper()
         }
+
+        # Add all Riot Games scrapers dynamically
+        for site_key in get_all_riot_sites():
+            scrapers[site_key] = RiotGamesScraper(site_key)
 
         if scraper_name not in scrapers:
             raise ValueError(f"Unknown scraper: {scraper_name}")
@@ -72,59 +78,76 @@ def process_news_item(self, news_item_data: dict):
         from services.content_processor import ContentProcessor
         content_processor = ContentProcessor()
 
-        # Check if we should skip this article first (synchronous check)
+        # Check if we should skip this article first
         if content_processor._should_skip_article(news_item):
-            logger.info(
-                f"[DEBUG] Skipping article: {news_item.title} - Reason: {content_processor._get_skip_reason(news_item)}")
+            skip_reason = content_processor._get_skip_reason(news_item)
+            logger.info(f"[DEBUG] Skipping article: {news_item.title} - Reason: {skip_reason}")
+
+            # ✅ Mark skipped article as seen so it won't be processed again
+            from models.tracking import ScrapingTracker
+            tracker = ScrapingTracker()
+            # Determine scraper name from website
+            scraper_name = news_item.website.lower().replace(' ', '_')
+            if scraper_name == "valorant":
+                scraper_name = "valorant"
+            elif scraper_name == "tft":
+                scraper_name = "teamfight_tactics"
+            # Add other mappings as needed
+
+            tracker.mark_articles_as_seen(scraper_name, [news_item_data])
+
             return {
                 "title": news_item.title,
                 "s3_images_uploaded": 0,
                 "status": "skipped",
                 "sent_to_copywriter": False,
-                "skip_reason": content_processor._get_skip_reason(news_item)
+                "skip_reason": skip_reason
             }
 
-        # Process images in parallel
+        # Queue image uploads but don't wait for them
         image_upload_jobs = []
         for i, image_url in enumerate(news_item.images):
             s3_key = f"{news_item.website.lower().replace(' ', '_')}/{news_item.title[:30]}_{i}.jpg"
             job = upload_image.apply_async(args=[image_url, s3_key], queue='uploads')
             image_upload_jobs.append(job)
 
-        # Wait for all image uploads to complete
-        s3_image_urls = []
-        for job in image_upload_jobs:
-            try:
-                result = job.get(timeout=30)  # 30 second timeout per image
-                if result.get('success') and result.get('s3_url'):
-                    s3_image_urls.append(result['s3_url'])
-            except Exception as e:
-                logger.error(f"[DEBUG] Image upload job failed: {e}")
-
-        # Create payload using async function in sync context
-        loop = asyncio.new_event_loop()
-        asyncio.set_event_loop(loop)
-        try:
-            payload = loop.run_until_complete(content_processor.process_news_item(news_item))
-        finally:
-            loop.close()
+        # Create simple payload without async processing
+        payload = CopywriterPayload(
+            title=news_item.title,
+            content=news_item.content,
+            images=news_item.images,
+            website=news_item.website,
+            destination_website=news_item.destination_website,
+            theme=news_item.theme,
+            url=news_item.url,
+            s3_image_urls=[]  # Empty for now, images upload in background
+        )
 
         # Send to copywriter
-        if payload:
-            content_processor.send_to_copywriter(payload)
-            return {
-                "title": news_item.title,
-                "s3_images_uploaded": len(s3_image_urls),
-                "status": "completed",
-                "sent_to_copywriter": True
-            }
-        else:
-            return {
-                "title": news_item.title,
-                "s3_images_uploaded": len(s3_image_urls),
-                "status": "skipped",
-                "sent_to_copywriter": False
-            }
+        content_processor.send_to_copywriter(payload)
+
+        # ✅ Mark article as seen ONLY after successful processing
+        from models.tracking import ScrapingTracker
+        tracker = ScrapingTracker()
+        # Determine scraper name from website
+        scraper_name = news_item.website.lower().replace(' ', '_')
+        if scraper_name == "valorant":
+            scraper_name = "valorant"
+        elif scraper_name == "tft":
+            scraper_name = "teamfight_tactics"
+        # Add other mappings as needed
+
+        tracker.mark_articles_as_seen(scraper_name, [news_item_data])
+
+        logger.info(f"[DEBUG] Successfully processed and sent article: {news_item.title}")
+
+        return {
+            "title": news_item.title,
+            "s3_images_uploaded": len(image_upload_jobs),
+            "status": "completed",
+            "sent_to_copywriter": True,
+            "image_jobs_queued": len(image_upload_jobs)
+        }
 
     except Exception as exc:
         logger.error(f"[DEBUG] Processing task failed: {exc}")

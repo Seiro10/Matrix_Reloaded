@@ -60,7 +60,7 @@ services:
     networks:
       - content-agents
 
-  # NEW Copywriter Agent
+  # NEW Copywriter Agent (WITH CELERY QUEUE SYSTEM)
   copywriter-agent:
     build:
       context: ./services/agents-copywriter
@@ -70,6 +70,9 @@ services:
     environment:
       - ENVIRONMENT=production
       - PORT=8083
+      # Celery Configuration
+      - CELERY_BROKER_URL=redis://copywriter-redis:6379/0
+      - CELERY_RESULT_BACKEND=redis://copywriter-redis:6379/0
       # API Keys
       - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY}
       - OPENAI_API_KEY=${OPENAI_API_KEY}
@@ -78,6 +81,9 @@ services:
       - USERNAME_WP=${WORDPRESS_USERNAME}
       - PASSWORD_WP=${WORDPRESS_PASSWORD}
       - WORDPRESS_BASE_URL=${WORDPRESS_API_URL:-https://stuffgaming.fr}
+      # Agent URLs
+      - METADATA_GENERATOR_URL=http://metadata-generator:8084
+      - REWRITER_AGENT_URL=http://rewriter-main:8085
     volumes:
       - copywriter_agent_logs:/app/logs
       - copywriter_agent_temp:/app/temp
@@ -91,6 +97,54 @@ services:
       start_period: 40s
     networks:
       - content-agents
+    depends_on:
+      - copywriter-redis
+
+  # NEW Copywriter Celery Worker
+  copywriter-worker:
+    build:
+      context: ./services/agents-copywriter
+      dockerfile: Dockerfile
+    command: bash -c "export PYTHONPATH=/app:$PYTHONPATH && celery -A core.celery_config.celery_app worker --loglevel=info --queues=copywriter,communication,publishing --concurrency=2"
+
+    environment:
+      - ENVIRONMENT=production
+      # Celery Configuration
+      - CELERY_BROKER_URL=redis://copywriter-redis:6379/0
+      - CELERY_RESULT_BACKEND=redis://copywriter-redis:6379/0
+      # API Keys
+      - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY}
+      - OPENAI_API_KEY=${OPENAI_API_KEY}
+      - TAVILY_API_KEY=${TAVILY_API_KEY}
+      # WordPress Configuration
+      - USERNAME_WP=${WORDPRESS_USERNAME}
+      - PASSWORD_WP=${WORDPRESS_PASSWORD}
+      - WORDPRESS_BASE_URL=${WORDPRESS_API_URL:-https://stuffgaming.fr}
+      # Agent URLs
+      - METADATA_GENERATOR_URL=http://metadata-generator:8084
+      - REWRITER_AGENT_URL=http://rewriter-main:8085
+    volumes:
+      - copywriter_agent_logs:/app/logs
+      - copywriter_agent_temp:/app/temp
+      - copywriter_agent_generated:/app/generated
+    restart: unless-stopped
+    networks:
+      - content-agents
+    depends_on:
+      - copywriter-redis
+
+  # NEW Redis for Copywriter Agent
+  copywriter-redis:
+    image: redis:7-alpine
+    networks:
+      - content-agents
+    volumes:
+      - copywriter_redis_data:/data
+    healthcheck:
+      test: ["CMD-SHELL", "redis-cli ping"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
 
   # NEW Metadata Generator Agent
   metadata-generator:
@@ -119,6 +173,7 @@ services:
     depends_on:
       - copywriter-agent
 
+  # RSS Agent
   rss-agent:
     build:
       context: ./services/rss-agent
@@ -146,19 +201,22 @@ services:
       - content-agents
     depends_on:
       - router-agent
+      - rss-redis
 
-    # Redis for RSS Agent
+  # Redis for RSS Agent
   rss-redis:
     image: redis:7-alpine
     networks:
       - content-agents
+    volumes:
+      - rss_redis_data:/data
     healthcheck:
       test: [ "CMD-SHELL", "redis-cli ping" ]
       interval: 30s
       timeout: 10s
       retries: 3
 
-    # RSS Agent Worker
+  # RSS Agent Worker
   rss-worker:
     build:
       context: ./services/rss-agent
@@ -227,6 +285,8 @@ volumes:
     driver: local
   copywriter_agent_generated:
     driver: local
+  copywriter_redis_data:
+    driver: local
   content_finder_output:
     driver: local
   content_finder_data:
@@ -240,6 +300,8 @@ volumes:
   rss_agent_logs:
     driver: local
   rss_agent_data:
+    driver: local
+  rss_redis_data:
     driver: local
 
 networks:

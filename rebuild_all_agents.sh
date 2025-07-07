@@ -43,15 +43,22 @@ SERVICES=(
     "router-agent:8080"
     "rewriter-main:8085"
     "copywriter-agent:8083"
+    "copywriter-worker:N/A"
     "metadata-generator:8084"
     "rss-agent:8086"
-    "rss-redis:6380"
+    "rss-worker:N/A"
+    "copywriter-redis:6379"
+    "rss-redis:6379"
 )
 
 echo "Services to rebuild:"
 for service in "${SERVICES[@]}"; do
     IFS=':' read -r name port <<< "$service"
-    echo "  - $name (port $port)"
+    if [ "$port" = "N/A" ]; then
+        echo "  - $name (worker/background service)"
+    else
+        echo "  - $name (port $port)"
+    fi
 done
 echo ""
 
@@ -104,7 +111,7 @@ docker network rm matrix_reloaded_content-agents content-agents router-agent_def
 
 # Additional cleanup for port conflicts
 log_info "🔍 Checking for port conflicts..."
-for port in 8000 8080 8083 8084 8085 8086; do
+for port in 8000 8080 8083 8084 8085 8086 6379; do
   CONTAINER_ID=$(docker ps -q --filter publish=$port)
   if [ ! -z "$CONTAINER_ID" ]; then
     log_warn "Found container using port $port: $CONTAINER_ID"
@@ -131,12 +138,36 @@ docker network prune -f
 log_blue "🔨 Building all services..."
 docker compose build --no-cache
 
-# Start all services
-log_info "🚀 Starting all services..."
-docker compose up -d
+# Start infrastructure services first (Redis instances)
+log_info "🚀 Starting infrastructure services (Redis)..."
+docker compose up -d copywriter-redis rss-redis
 
-# Wait for services to be ready
-log_info "⏳ Waiting for services to be ready..."
+# Wait for Redis to be ready
+log_info "⏳ Waiting for Redis services to be ready..."
+sleep 10
+
+# Start core services
+log_info "🚀 Starting core services..."
+docker compose up -d copywriter-agent rewriter-main
+
+# Wait for core services
+log_info "⏳ Waiting for core services to be ready..."
+sleep 20
+
+# Start workers and dependent services
+log_info "🚀 Starting workers and dependent services..."
+docker compose up -d copywriter-worker metadata-generator router-agent
+
+# Wait for dependent services
+log_info "⏳ Waiting for dependent services to be ready..."
+sleep 20
+
+# Start remaining services
+log_info "🚀 Starting remaining services..."
+docker compose up -d rss-agent rss-worker content-finder
+
+# Wait for all services to be ready
+log_info "⏳ Waiting for all services to be ready..."
 sleep 30
 
 # Function to check service health
@@ -145,6 +176,11 @@ check_service_health() {
     local port=$2
     local max_attempts=12
     local attempt=1
+
+    if [ "$port" = "N/A" ]; then
+        log_info "⚠️ $service_name is a worker service (no health check)"
+        return 0
+    fi
 
     log_info "🏥 Checking $service_name health..."
 
@@ -167,43 +203,39 @@ check_service_health() {
 services_status=()
 all_healthy=true
 
-# Check copywriter-agent (foundation service)
-if check_service_health "copywriter-agent" "8083"; then
-    services_status+=("copywriter-agent:OK")
+# Check services with health endpoints
+for service_info in "${SERVICES[@]}"; do
+    IFS=':' read -r service_name port <<< "$service_info"
+
+    if [ "$port" != "N/A" ] && [ "$port" != "6379" ]; then  # Skip Redis ports
+        if check_service_health "$service_name" "$port"; then
+            services_status+=("$service_name:OK")
+        else
+            services_status+=("$service_name:FAIL")
+            all_healthy=false
+        fi
+    else
+        services_status+=("$service_name:WORKER")
+    fi
+done
+
+# Check Redis connectivity
+log_info "🔍 Checking Redis connectivity..."
+if docker exec matrix_reloaded-copywriter-redis-1 redis-cli ping >/dev/null 2>&1; then
+    services_status+=("copywriter-redis:OK")
+    log_info "✅ Copywriter Redis is healthy"
 else
-    services_status+=("copywriter-agent:FAIL")
+    services_status+=("copywriter-redis:FAIL")
+    log_error "❌ Copywriter Redis is unhealthy"
     all_healthy=false
 fi
 
-# Check rewriter-main
-if check_service_health "rewriter-main" "8085"; then
-    services_status+=("rewriter-main:OK")
+if docker exec matrix_reloaded-rss-redis-1 redis-cli ping >/dev/null 2>&1; then
+    services_status+=("rss-redis:OK")
+    log_info "✅ RSS Redis is healthy"
 else
-    services_status+=("rewriter-main:FAIL")
-    all_healthy=false
-fi
-
-# Check metadata-generator
-if check_service_health "metadata-generator" "8084"; then
-    services_status+=("metadata-generator:OK")
-else
-    services_status+=("metadata-generator:FAIL")
-    all_healthy=false
-fi
-
-# Check router-agent (middle service)
-if check_service_health "router-agent" "8080"; then
-    services_status+=("router-agent:OK")
-else
-    services_status+=("router-agent:FAIL")
-    all_healthy=false
-fi
-
-# Check content-finder (top service)
-if check_service_health "content-finder" "8000"; then
-    services_status+=("content-finder:OK")
-else
-    services_status+=("content-finder:FAIL")
+    services_status+=("rss-redis:FAIL")
+    log_error "❌ RSS Redis is unhealthy"
     all_healthy=false
 fi
 
@@ -224,12 +256,21 @@ echo "  📍 Copywriter-agent: http://localhost:8083"
 echo "  📍 Copywriter-agent health: http://localhost:8083/health"
 echo "  📍 Metadata-generator: http://localhost:8084"
 echo "  📍 Metadata-generator health: http://localhost:8084/health"
+echo "  📍 RSS-agent: http://localhost:8086"
+echo "  📍 RSS-agent health: http://localhost:8086/health"
 
 echo ""
 log_info "🔗 Service communication (internal Docker network):"
 echo "  content-finder → http://router-agent:8080"
 echo "  router-agent → http://rewriter-main:8085"
+echo "  router-agent → http://copywriter-agent:8083"
 echo "  metadata-generator → http://copywriter-agent:8083"
+echo "  rss-agent → http://router-agent:8080"
+
+echo ""
+log_info "⚙️ Queue Systems:"
+echo "  📊 Copywriter Celery: redis://copywriter-redis:6379/0"
+echo "  📊 RSS Celery: redis://rss-redis:6379/0"
 
 echo ""
 log_info "🌐 Network information:"
@@ -242,6 +283,8 @@ for status in "${services_status[@]}"; do
     IFS=':' read -r service result <<< "$status"
     if [[ $result == "OK" ]]; then
         log_info "  ✅ $service: HEALTHY"
+    elif [[ $result == "WORKER" ]]; then
+        log_info "  ⚙️ $service: WORKER SERVICE"
     else
         log_error "  ❌ $service: UNHEALTHY"
     fi
@@ -254,26 +297,32 @@ if [ "$all_healthy" = true ]; then
     log_info "💡 Test the complete workflow:"
     echo "  1. Send a request to content-finder: http://localhost:8000"
     echo "  2. Content-finder will automatically call router-agent"
-    echo "  3. Router-agent will call rewriter-main"
-    echo "  4. Rewriter-main will process and update articles"
+    echo "  3. Router-agent will call copywriter-agent (with queue system)"
+    echo "  4. Copywriter-agent will process using Celery workers"
     echo "  5. Metadata-generator can call copywriter-agent if needed"
+    echo "  6. RSS-agent will process articles with its own queue system"
     echo ""
     log_info "🔧 Useful commands:"
-    echo "  View logs: docker-compose logs [service-name]"
-    echo "  Stop all: docker-compose down"
-    echo "  Restart: docker-compose restart [service-name]"
+    echo "  View logs: docker compose logs [service-name]"
+    echo "  View worker logs: docker compose logs copywriter-worker"
+    echo "  Stop all: docker compose down"
+    echo "  Restart: docker compose restart [service-name]"
+    echo "  Monitor queues: docker compose exec copywriter-redis redis-cli monitor"
 else
     log_error "⚠️ Some services are not healthy. Check the logs."
     echo ""
     log_info "🔍 To check logs:"
-    echo "  docker-compose logs content-finder"
-    echo "  docker-compose logs router-agent"
-    echo "  docker-compose logs rewriter-main"
-    echo "  docker-compose logs copywriter-agent"
-    echo "  docker-compose logs metadata-generator"
+    echo "  docker compose logs content-finder"
+    echo "  docker compose logs router-agent"
+    echo "  docker compose logs rewriter-main"
+    echo "  docker compose logs copywriter-agent"
+    echo "  docker compose logs copywriter-worker"
+    echo "  docker compose logs metadata-generator"
+    echo "  docker compose logs rss-agent"
+    echo "  docker compose logs rss-worker"
     echo ""
     log_info "🔧 To restart a specific service:"
-    echo "  docker-compose restart [service-name]"
+    echo "  docker compose restart [service-name]"
 fi
 
 echo ""
@@ -306,3 +355,9 @@ else
         echo "    - $var"
     done
 fi
+
+echo ""
+log_info "🎯 Queue System Status:"
+echo "  📊 Check Copywriter queue: docker compose exec copywriter-redis redis-cli llen copywriter"
+echo "  📊 Check RSS queue: docker compose exec rss-redis redis-cli llen scraping"
+echo "  📊 Monitor all queues: docker compose logs copywriter-worker rss-worker"

@@ -12,6 +12,12 @@ logger = logging.getLogger(__name__)
 
 class S3Service:
     def __init__(self):
+        # Debug AWS credentials
+        logger.info(f"[DEBUG] AWS_ACCESS_KEY_ID: {settings.aws_access_key_id[:10]}..." if settings.aws_access_key_id else "[DEBUG] AWS_ACCESS_KEY_ID: EMPTY")
+        logger.info(f"[DEBUG] AWS_SECRET_ACCESS_KEY: {'SET' if settings.aws_secret_access_key else 'EMPTY'}")
+        logger.info(f"[DEBUG] S3_BUCKET_NAME: {settings.s3_bucket_name}")
+        logger.info(f"[DEBUG] S3_REGION: {settings.s3_region}")
+
         self.s3_client = boto3.client(
             's3',
             aws_access_key_id=settings.aws_access_key_id,

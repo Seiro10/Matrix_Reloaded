@@ -292,7 +292,7 @@ def forward_to_copywriter(metadata: MetadataOutput, original_csv_path: str) -> D
 
         # Send POST request to copywriter agent using the correct endpoint
         response = requests.post(
-            f"{COPYWRITER_AGENT_URL}/write_article",  # Fixed endpoint name
+            f"{COPYWRITER_AGENT_URL}/copywriter",  # Fixed endpoint name
             json=payload,
             headers={"Content-Type": "application/json"},
             timeout=120  # Longer timeout for content generation

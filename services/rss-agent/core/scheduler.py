@@ -10,10 +10,13 @@ class NewsScheduler:
         self.scheduler = AsyncIOScheduler()
         self.queue_manager = QueueManager()
 
+        # Import Riot sites dynamically
+        from scrapers.config.riot_sites import get_all_riot_sites
+
         # List of all scrapers to check
         self.scrapers_to_check = [
             'league_of_legends',
-            # Add more scrapers here as you create them
+            *get_all_riot_sites()
         ]
 
     async def check_for_updates(self):
