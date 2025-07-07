@@ -1,0 +1,42 @@
+version: '3.8'
+
+services:
+  copywriter-agent:
+    build: .
+    ports:
+      - "8083:8083"
+    environment:
+      - CELERY_BROKER_URL=redis://copywriter-redis:6379/0
+      - CELERY_RESULT_BACKEND=redis://copywriter-redis:6379/0
+      - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY}
+      - OPENAI_API_KEY=${OPENAI_API_KEY}
+      - USERNAME_WP=${WORDPRESS_USERNAME}
+      - PASSWORD_WP=${WORDPRESS_PASSWORD}
+    depends_on:
+      - copywriter-redis
+    networks:
+      - copywriter-network
+
+  copywriter-worker:
+    build: .
+    command: celery -A core.celery_config.celery_app worker --loglevel=info --queues=copywriter,communication,publishing --concurrency=2
+    environment:
+      - CELERY_BROKER_URL=redis://copywriter-redis:6379/0
+      - CELERY_RESULT_BACKEND=redis://copywriter-redis:6379/0
+      - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY}
+      - OPENAI_API_KEY=${OPENAI_API_KEY}
+      - USERNAME_WP=${WORDPRESS_USERNAME}
+      - PASSWORD_WP=${WORDPRESS_PASSWORD}
+    depends_on:
+      - copywriter-redis
+    networks:
+      - copywriter-network
+
+  copywriter-redis:
+    image: redis:7-alpine
+    networks:
+      - copywriter-network
+
+networks:
+  copywriter-network:
+    driver: bridge
