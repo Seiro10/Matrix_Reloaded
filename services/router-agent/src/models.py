@@ -144,6 +144,7 @@ class RSSPayload(BaseModel):
     theme: str
     url: str
     s3_image_urls: List[str] = []
+    main_image: Optional[str] = None
 
 class ContentFinderOutput(BaseModel):
     keywords_data: Dict[str, KeywordData]

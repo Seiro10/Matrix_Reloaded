@@ -1,12 +1,25 @@
 from celery import Celery
 from config.settings import settings
-from models.schemas import NewsItem, CopywriterPayload
 import asyncio
 import logging
 from typing import List
 import json
+import os
+from dotenv import load_dotenv
+
+# Model imports
+from models.schemas import NewsItem, CopywriterPayload
+from models.tracking import ScrapingTracker
+
+# Service imports
+from services.content_processor import ContentProcessor
+from services.s3_service import S3Service
+
+# Load .env for Celery workers
+load_dotenv()
 
 logger = logging.getLogger(__name__)
+
 
 celery_app = Celery(
     "rss_agent",

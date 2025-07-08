@@ -184,34 +184,47 @@ async def get_scraper_stats(scraper_name: str):
         return {"error": str(e)}
 
 
-@app.post("/tracking/reset/{scraper_name}")
-async def reset_scraper_tracking(scraper_name: str):
-    """Reset tracking for a specific scraper (for testing)"""
+@app.delete("/tracking/reset/{scraper_name}")
+async def reset_tracking(scraper_name: str):
+    """Reset tracking for a specific scraper"""
     try:
         from models.tracking import ScrapingTracker
         tracker = ScrapingTracker()
 
-        # Remove scraper data
+        # Reset the scraper's data
         if scraper_name in tracker.data["scrapers"]:
-            del tracker.data["scrapers"][scraper_name]
+            tracker.data["scrapers"][scraper_name] = {
+                "seen_urls": [],
+                "last_run": None
+            }
 
-        # Remove articles from this scraper
-        articles_to_remove = [
-            url for url, data in tracker.data["articles"].items()
-            if data.get("scraper") == scraper_name
-        ]
+            # Remove articles for this scraper
+            articles_to_remove = [
+                url for url, data in tracker.data["articles"].items()
+                if data.get("scraper") == scraper_name
+            ]
 
-        for url in articles_to_remove:
-            del tracker.data["articles"][url]
+            for url in articles_to_remove:
+                del tracker.data["articles"][url]
 
-        tracker._save_data()
+            tracker._save_data()
 
-        return {
-            "message": f"Reset tracking for {scraper_name}",
-            "removed_articles": len(articles_to_remove)
-        }
+            return {
+                "success": True,
+                "message": f"Reset tracking for {scraper_name}",
+                "removed_urls": len(articles_to_remove)
+            }
+        else:
+            return {
+                "success": False,
+                "message": f"Scraper {scraper_name} not found"
+            }
+
     except Exception as e:
-        return {"error": str(e)}
+        return {
+            "success": False,
+            "error": str(e)
+        }
 
 
 @app.get("/tracking/new-check/{scraper_name}")
@@ -312,6 +325,64 @@ async def reset_all_tracking():
         }
     except Exception as e:
         return {"error": str(e)}
+
+
+@app.get("/test-s3")
+async def test_s3():
+    """Test S3 connection and upload"""
+    try:
+        from services.s3_service import S3Service
+        s3_service = S3Service()
+
+        if not s3_service.s3_client:
+            return {"status": "error", "message": "S3 client not initialized"}
+
+        # Test with a simple text file
+        test_content = "Test file for S3 upload - RSS Agent"
+        test_key = "test/rss-agent-test.txt"
+
+        s3_service.s3_client.put_object(
+            Bucket=s3_service.bucket_name,
+            Key=test_key,
+            Body=test_content.encode(),
+            ContentType="text/plain"
+        )
+
+        test_url = f"https://{s3_service.bucket_name}.s3.{s3_service.s3_client._client_config.region_name}.amazonaws.com/{test_key}"
+
+        return {
+            "status": "success",
+            "message": "S3 upload test successful",
+            "test_file_url": test_url,
+            "bucket": s3_service.bucket_name
+        }
+    except Exception as e:
+        return {
+            "status": "error",
+            "message": str(e),
+            "error_type": type(e).__name__
+        }
+
+
+@app.get("/debug/aws")
+async def debug_aws():
+    """Debug AWS configuration"""
+    from config.settings import settings
+    import os
+
+    return {
+        "aws_access_key_set": bool(settings.aws_access_key_id),
+        "aws_secret_key_set": bool(settings.aws_secret_access_key),
+        "s3_bucket": settings.s3_bucket_name,
+        "s3_region": settings.s3_region,
+        "access_key_length": len(settings.aws_access_key_id) if settings.aws_access_key_id else 0,
+        "secret_key_length": len(settings.aws_secret_access_key) if settings.aws_secret_access_key else 0,
+        # Check environment variables directly
+        "env_aws_access_key_set": bool(os.getenv('AWS_ACCESS_KEY_ID')),
+        "env_aws_secret_key_set": bool(os.getenv('AWS_SECRET_ACCESS_KEY')),
+        "env_access_key_length": len(os.getenv('AWS_ACCESS_KEY_ID', '')),
+        "env_secret_key_length": len(os.getenv('AWS_SECRET_ACCESS_KEY', ''))
+    }
 
 if __name__ == "__main__":
     import uvicorn

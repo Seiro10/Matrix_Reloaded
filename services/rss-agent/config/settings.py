@@ -1,13 +1,14 @@
 from pydantic_settings import BaseSettings
 from typing import Optional
-
+import os
+from dotenv import load_dotenv
 
 class Settings(BaseSettings):
     # S3 Configuration
     aws_access_key_id: str = ""
     aws_secret_access_key: str = ""
-    s3_bucket_name: str = "your-bucket-name"
-    s3_region: str = "us-east-1"
+    s3_bucket_name: str = "matrix-reloaded-rss-img-bucket"
+    s3_region: str = "eu-west-3"
 
     # Redis/Queue Configuration
     redis_url: str = "redis://redis:6379/0"
@@ -38,8 +39,24 @@ class Settings(BaseSettings):
 
     class Config:
         env_file = ".env"
-        # Allow extra fields to prevent validation errors
         extra = "allow"
+        # ADD THESE:
+        case_sensitive = False
+        env_file_encoding = 'utf-8'
+
+    def __init__(self, **kwargs):
+        super().__init__(**kwargs)
+
+        # ADD MANUAL FALLBACK:
+        if not self.aws_access_key_id:
+            self.aws_access_key_id = os.getenv('AWS_ACCESS_KEY_ID', '')
+        if not self.aws_secret_access_key:
+            self.aws_secret_access_key = os.getenv('AWS_SECRET_ACCESS_KEY', '')
+
+        # Debug logging
+        print(
+            f"[DEBUG] Loaded AWS Access Key: {self.aws_access_key_id[:10]}..." if self.aws_access_key_id else "[DEBUG] AWS Access Key: EMPTY")
+        print(f"[DEBUG] Loaded AWS Secret: {'SET' if self.aws_secret_access_key else 'EMPTY'}")
 
 
 settings = Settings()

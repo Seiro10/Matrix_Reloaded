@@ -1185,10 +1185,13 @@ def create_csv_for_rss_content(rss_payload, output_dir: str = "./output") -> str
         content_snippet = rss_payload.content[:200] if rss_payload.content else ""
         meta_description = rss_payload.content[:160] if rss_payload.content else ""
 
+        main_image_info = f"\nMain Image: {rss_payload.main_image}" if rss_payload.main_image else ""
+        full_content = f"{rss_payload.content}{main_image_info}"
+
         # RSS content becomes "competitor 1" (the reference content)
         row = [
             keyword,  # KW
-            'LOW',  # competition (RSS is original)
+            'News',  # competition - CHANGED FROM 'LOW' TO 'News'
             rss_payload.destination_website,  # Site
             'FR',  # language
             '1.0',  # confidence (high for RSS)
@@ -1200,7 +1203,7 @@ def create_csv_for_rss_content(rss_payload, output_dir: str = "./output") -> str
             rss_payload.title,  # title1
             rss_payload.url,  # url1
             content_snippet,  # snippet1
-            rss_payload.content,  # content1
+            full_content,  # content1 - MODIFIED TO INCLUDE MAIN IMAGE
             '',  # structure1 (empty)
             '',  # headlines1 (empty)
             meta_description,  # metadescription1
