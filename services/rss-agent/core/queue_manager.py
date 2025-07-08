@@ -1,6 +1,9 @@
 from celery import Celery
 import os
 import logging
+from dotenv import load_dotenv
+
+load_dotenv()
 
 logger = logging.getLogger(__name__)
 
@@ -30,6 +33,12 @@ celery_app.conf.update(
     worker_concurrency=4,
     task_acks_late=True,
     worker_prefetch_multiplier=1,
+    worker_env={
+        'AWS_ACCESS_KEY_ID': os.getenv('AWS_ACCESS_KEY_ID', ''),
+        'AWS_SECRET_ACCESS_KEY': os.getenv('AWS_SECRET_ACCESS_KEY', ''),
+        'S3_BUCKET_NAME': os.getenv('S3_BUCKET_NAME', 'matrix-reloaded-rss-img-bucket'),
+        'S3_REGION': os.getenv('S3_REGION', 'eu-west-3'),
+    }
 )
 
 

@@ -187,6 +187,10 @@ services:
       - CELERY_BROKER_URL=redis://rss-redis:6379/0
       - CELERY_RESULT_BACKEND=redis://rss-redis:6379/0
       - ROUTER_AGENT_URL=http://router-agent:8080
+      - AWS_ACCESS_KEY_ID=${AWS_ACCESS_KEY_ID}
+      - AWS_SECRET_ACCESS_KEY=${AWS_SECRET_ACCESS_KEY}
+      - S3_BUCKET_NAME=${S3_BUCKET_NAME}
+      - S3_REGION=${S3_REGION}
     volumes:
       - rss_agent_logs:/app/logs
       - rss_agent_data:/app/data
@@ -206,6 +210,17 @@ services:
   # Redis for RSS Agent
   rss-redis:
     image: redis:7-alpine
+    environment:
+      - ENVIRONMENT=production
+      - PORT=8086
+      - REDIS_URL=redis://rss-redis:6379/0
+      - CELERY_BROKER_URL=redis://rss-redis:6379/0
+      - CELERY_RESULT_BACKEND=redis://rss-redis:6379/0
+      - ROUTER_AGENT_URL=http://router-agent:8080
+      - AWS_ACCESS_KEY_ID=${AWS_ACCESS_KEY_ID}
+      - AWS_SECRET_ACCESS_KEY=${AWS_SECRET_ACCESS_KEY}
+      - S3_BUCKET_NAME=${S3_BUCKET_NAME}
+      - S3_REGION=${S3_REGION}
     networks:
       - content-agents
     volumes:
@@ -228,6 +243,10 @@ services:
       - CELERY_BROKER_URL=redis://rss-redis:6379/0
       - CELERY_RESULT_BACKEND=redis://rss-redis:6379/0
       - ROUTER_AGENT_URL=http://router-agent:8080
+      - AWS_ACCESS_KEY_ID=${AWS_ACCESS_KEY_ID}
+      - AWS_SECRET_ACCESS_KEY=${AWS_SECRET_ACCESS_KEY}
+      - S3_BUCKET_NAME=${S3_BUCKET_NAME}
+      - S3_REGION=${S3_REGION}
     volumes:
       - rss_agent_logs:/app/logs
       - rss_agent_data:/app/data

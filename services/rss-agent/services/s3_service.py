@@ -6,25 +6,89 @@ from typing import Optional
 import mimetypes
 from urllib.parse import urlparse
 import os
+from dotenv import load_dotenv
 
 logger = logging.getLogger(__name__)
 
 
 class S3Service:
     def __init__(self):
-        # Debug AWS credentials
-        logger.info(f"[DEBUG] AWS_ACCESS_KEY_ID: {settings.aws_access_key_id[:10]}..." if settings.aws_access_key_id else "[DEBUG] AWS_ACCESS_KEY_ID: EMPTY")
-        logger.info(f"[DEBUG] AWS_SECRET_ACCESS_KEY: {'SET' if settings.aws_secret_access_key else 'EMPTY'}")
-        logger.info(f"[DEBUG] S3_BUCKET_NAME: {settings.s3_bucket_name}")
-        logger.info(f"[DEBUG] S3_REGION: {settings.s3_region}")
+        # DIRECT CREDENTIAL READING - NO DEPENDENCIES
+        import os
 
-        self.s3_client = boto3.client(
-            's3',
-            aws_access_key_id=settings.aws_access_key_id,
-            aws_secret_access_key=settings.aws_secret_access_key,
-            region_name=settings.s3_region
-        )
-        self.bucket_name = settings.s3_bucket_name
+        # Read directly from environment - bypass settings completely
+        aws_access_key_id = None
+        aws_secret_access_key = None
+
+        # Try multiple ways to get credentials
+        for key_name in ['AWS_ACCESS_KEY_ID', 'aws_access_key_id']:
+            if key_name in os.environ:
+                aws_access_key_id = os.environ[key_name]
+                break
+
+        for key_name in ['AWS_SECRET_ACCESS_KEY', 'aws_secret_access_key']:
+            if key_name in os.environ:
+                aws_secret_access_key = os.environ[key_name]
+                break
+
+        # If still empty, read from parent process environment
+        if not aws_access_key_id:
+            try:
+                with open('/proc/1/environ', 'rb') as f:
+                    env_data = f.read().decode('utf-8', errors='ignore')
+                    for line in env_data.split('\x00'):
+                        if line.startswith('AWS_ACCESS_KEY_ID='):
+                            aws_access_key_id = line.split('=', 1)[1]
+                        elif line.startswith('AWS_SECRET_ACCESS_KEY='):
+                            aws_secret_access_key = line.split('=', 1)[1]
+            except:
+                pass
+
+        # REMOVE THE HARDCODED FALLBACK - REPLACE WITH ERROR
+        if not aws_access_key_id or not aws_secret_access_key:
+            logger.error("[DEBUG] AWS credentials not found in environment")
+            self.s3_client = None
+            self.bucket_name = "matrix-reloaded-rss-img-bucket"
+            return
+
+        s3_bucket_name = "matrix-reloaded-rss-img-bucket"
+        s3_region = "eu-west-3"
+
+        # Debug credentials (without showing actual values)
+        logger.info(f"[DEBUG] AWS_ACCESS_KEY_ID: {aws_access_key_id[:10]}...")
+        logger.info(f"[DEBUG] AWS_SECRET_ACCESS_KEY: {'SET' if aws_secret_access_key else 'EMPTY'}")
+        logger.info(f"[DEBUG] S3_BUCKET_NAME: {s3_bucket_name}")
+        logger.info(f"[DEBUG] S3_REGION: {s3_region}")
+
+        try:
+            self.s3_client = boto3.client(
+                's3',
+                aws_access_key_id=aws_access_key_id,
+                aws_secret_access_key=aws_secret_access_key,
+                region_name=s3_region
+            )
+            self.bucket_name = s3_bucket_name
+
+            logger.info(f"[DEBUG] ✅ S3 client initialized successfully")
+
+        except Exception as e:
+            logger.error(f"[DEBUG] ❌ Failed to initialize S3 client: {e}")
+            self.s3_client = None
+
+    def _sanitize_s3_key(self, s3_key: str) -> str:
+        """Sanitize S3 key to remove problematic characters"""
+        import re
+
+        # Remove or replace problematic characters with underscore
+        sanitized = re.sub(r'[^\w\-_./]', '_', s3_key)
+        # Remove multiple underscores
+        sanitized = re.sub(r'_+', '_', sanitized)
+        # Remove leading/trailing underscores from each path segment
+        parts = sanitized.split('/')
+        parts = [part.strip('_') for part in parts if part.strip('_')]
+        sanitized = '/'.join(parts)
+
+        return sanitized
 
     async def upload_image_from_url(self, image_url: str, s3_key: str) -> Optional[str]:
         """Download image from URL and upload to S3"""
@@ -61,10 +125,17 @@ class S3Service:
             else:
                 s3_key = f"{s3_key}{file_extension}"
 
-            logger.info(f"[DEBUG] Updated S3 key: {s3_key}")
+            # SANITIZE THE S3 KEY:
+            s3_key = self._sanitize_s3_key(s3_key)
+            logger.info(f"[DEBUG] Sanitized S3 key: {s3_key}")
 
             # Map content type for S3
             s3_content_type = self._get_s3_content_type(file_extension, content_type)
+
+            # Check if S3 client is available
+            if not self.s3_client:
+                logger.error("[DEBUG] S3 client not initialized - cannot upload")
+                return None
 
             # Upload to S3
             self.s3_client.put_object(
@@ -79,7 +150,7 @@ class S3Service:
                 }
             )
 
-            s3_url = f"https://{self.bucket_name}.s3.{settings.s3_region}.amazonaws.com/{s3_key}"
+            s3_url = f"https://{self.bucket_name}.s3.eu-west-3.amazonaws.com/{s3_key}"
             logger.info(f"[DEBUG] Image uploaded to S3: {s3_url}")
             return s3_url
 
