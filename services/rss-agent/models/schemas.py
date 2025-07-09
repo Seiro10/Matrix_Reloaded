@@ -12,6 +12,7 @@ class NewsItem(BaseModel):
     url: str
     published_date: datetime
     s3_image_urls: Optional[List[str]] = []
+    banner_image: Optional[str] = None 
 
 class RSSFeedData(BaseModel):
     items: List[NewsItem]

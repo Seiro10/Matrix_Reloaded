@@ -7,13 +7,14 @@ import mimetypes
 from urllib.parse import urlparse
 import os
 from dotenv import load_dotenv
+from PIL import Image
+import io
 
 logger = logging.getLogger(__name__)
 
 
 class S3Service:
     def __init__(self):
-        # DIRECT CREDENTIAL READING - NO DEPENDENCIES
         import os
 
         # Read directly from environment - bypass settings completely
@@ -90,9 +91,14 @@ class S3Service:
 
         return sanitized
 
-    async def upload_image_from_url(self, image_url: str, s3_key: str) -> Optional[str]:
-        """Download image from URL and upload to S3"""
+    async def upload_image_from_url(self, image_url: str, s3_key: str, convert_to_jpg: bool = True) -> Optional[str]:
+        """Download image from URL, optionally convert to JPG, and upload to S3"""
         try:
+            # Validate URL before attempting download
+            if not self._is_valid_image_url(image_url):
+                logger.warning(f"[DEBUG] Invalid image URL rejected: {image_url}")
+                return None
+
             logger.info(f"[DEBUG] Downloading image: {image_url}")
 
             # Download image with better headers
@@ -114,23 +120,31 @@ class S3Service:
             content_type = response.headers.get('content-type', '')
             logger.info(f"[DEBUG] Image content-type: {content_type}")
 
-            # Determine file extension from content type or URL
-            file_extension = self._get_file_extension(image_url, content_type)
-            logger.info(f"[DEBUG] Detected file extension: {file_extension}")
+            # Process the image
+            if convert_to_jpg:
+                image_data, final_content_type, final_extension = self._convert_to_jpg(response.content, content_type)
+                if not image_data:
+                    logger.error(f"[DEBUG] Failed to convert image to JPG: {image_url}")
+                    # Fallback: upload original image
+                    logger.info(f"[DEBUG] Uploading original image instead")
+                    image_data = response.content
+                    final_extension = self._get_file_extension(image_url, content_type)
+                    final_content_type = self._get_s3_content_type(final_extension, content_type)
+            else:
+                image_data = response.content
+                final_extension = self._get_file_extension(image_url, content_type)
+                final_content_type = self._get_s3_content_type(final_extension, content_type)
 
             # Update S3 key with correct extension
             s3_key_parts = s3_key.rsplit('.', 1)
             if len(s3_key_parts) == 2:
-                s3_key = f"{s3_key_parts[0]}{file_extension}"
+                s3_key = f"{s3_key_parts[0]}{final_extension}"
             else:
-                s3_key = f"{s3_key}{file_extension}"
+                s3_key = f"{s3_key}{final_extension}"
 
-            # SANITIZE THE S3 KEY:
+            # Sanitize the S3 key
             s3_key = self._sanitize_s3_key(s3_key)
-            logger.info(f"[DEBUG] Sanitized S3 key: {s3_key}")
-
-            # Map content type for S3
-            s3_content_type = self._get_s3_content_type(file_extension, content_type)
+            logger.info(f"[DEBUG] Final S3 key: {s3_key}")
 
             # Check if S3 client is available
             if not self.s3_client:
@@ -141,12 +155,13 @@ class S3Service:
             self.s3_client.put_object(
                 Bucket=self.bucket_name,
                 Key=s3_key,
-                Body=response.content,
-                ContentType=s3_content_type,
+                Body=image_data,
+                ContentType=final_content_type,
                 CacheControl='max-age=31536000',  # 1 year cache
                 Metadata={
                     'original-url': image_url,
-                    'original-content-type': content_type
+                    'original-content-type': content_type,
+                    'converted': str(convert_to_jpg and final_extension == '.jpg')
                 }
             )
 
@@ -161,9 +176,113 @@ class S3Service:
             logger.error(f"[DEBUG] Error uploading image to S3: {e}")
             return None
 
+    def _convert_to_jpg(self, image_data: bytes, original_content_type: str) -> tuple[Optional[bytes], str, str]:
+        """Convert image to JPG format with better error handling"""
+        try:
+            # Try to enable AVIF support
+            try:
+                from pillow_avif import AvifImagePlugin
+                logger.info("[DEBUG] AVIF plugin loaded successfully")
+            except ImportError:
+                logger.warning("[DEBUG] AVIF plugin not available, trying without it")
+
+            # Open the image with Pillow
+            try:
+                image = Image.open(io.BytesIO(image_data))
+                logger.info(
+                    f"[DEBUG] Successfully opened image - Format: {image.format}, Mode: {image.mode}, Size: {image.size}")
+            except Exception as e:
+                logger.error(f"[DEBUG] Failed to open image with Pillow: {e}")
+                # Try alternative approach for AVIF
+                if 'avif' in original_content_type.lower():
+                    return self._convert_avif_fallback(image_data)
+                return None, '', ''
+
+            # Convert to RGB if necessary (AVIF, PNG with transparency, etc.)
+            if image.mode in ('RGBA', 'LA', 'P'):
+                logger.info(f"[DEBUG] Converting from {image.mode} to RGB with white background")
+                # Create a white background
+                background = Image.new('RGB', image.size, (255, 255, 255))
+                if image.mode == 'P':
+                    image = image.convert('RGBA')
+                if image.mode == 'RGBA':
+                    background.paste(image, mask=image.split()[-1])
+                else:
+                    background.paste(image)
+                image = background
+            elif image.mode != 'RGB':
+                logger.info(f"[DEBUG] Converting from {image.mode} to RGB")
+                image = image.convert('RGB')
+
+            # Save as JPG to bytes
+            output = io.BytesIO()
+            image.save(output, format='JPEG', quality=85, optimize=True)
+            output.seek(0)
+
+            jpg_data = output.getvalue()
+
+            logger.info(
+                f"[DEBUG] Successfully converted to JPG - Original: {len(image_data)} bytes, JPG: {len(jpg_data)} bytes")
+
+            return jpg_data, 'image/jpeg', '.jpg'
+
+        except Exception as e:
+            logger.error(f"[DEBUG] Error converting image to JPG: {e}")
+            # Try fallback method for AVIF
+            if 'avif' in original_content_type.lower():
+                return self._convert_avif_fallback(image_data)
+            return None, '', ''
+
+    def _convert_avif_fallback(self, image_data: bytes) -> tuple[Optional[bytes], str, str]:
+        """Fallback method for AVIF conversion using external tools"""
+        try:
+            import subprocess
+            import tempfile
+
+            logger.info("[DEBUG] Trying AVIF fallback conversion")
+
+            # Create temporary files
+            with tempfile.NamedTemporaryFile(suffix='.avif', delete=False) as temp_avif:
+                temp_avif.write(image_data)
+                temp_avif_path = temp_avif.name
+
+            with tempfile.NamedTemporaryFile(suffix='.jpg', delete=False) as temp_jpg:
+                temp_jpg_path = temp_jpg.name
+
+            try:
+                # Try using imagemagick convert command
+                result = subprocess.run([
+                    'convert', temp_avif_path, temp_jpg_path
+                ], capture_output=True, text=True, timeout=30)
+
+                if result.returncode == 0 and os.path.exists(temp_jpg_path):
+                    with open(temp_jpg_path, 'rb') as f:
+                        jpg_data = f.read()
+
+                    logger.info(f"[DEBUG] AVIF fallback conversion successful: {len(jpg_data)} bytes")
+                    return jpg_data, 'image/jpeg', '.jpg'
+                else:
+                    logger.error(f"[DEBUG] ImageMagick conversion failed: {result.stderr}")
+
+            except (subprocess.TimeoutExpired, FileNotFoundError) as e:
+                logger.error(f"[DEBUG] ImageMagick not available or timeout: {e}")
+
+            finally:
+                # Clean up temp files
+                try:
+                    os.unlink(temp_avif_path)
+                    os.unlink(temp_jpg_path)
+                except:
+                    pass
+
+        except Exception as e:
+            logger.error(f"[DEBUG] AVIF fallback conversion failed: {e}")
+
+        return None, '', ''
+
+
     def _get_file_extension(self, image_url: str, content_type: str) -> str:
         """Determine the correct file extension"""
-
         # Map content types to extensions
         content_type_map = {
             'image/avif': '.avif',
@@ -203,7 +322,6 @@ class S3Service:
 
     def _get_s3_content_type(self, file_extension: str, original_content_type: str) -> str:
         """Get the appropriate content type for S3"""
-
         extension_map = {
             '.avif': 'image/avif',
             '.webp': 'image/webp',
@@ -226,3 +344,23 @@ class S3Service:
 
         # Default
         return 'image/jpeg'
+
+    def _is_valid_image_url(self, url: str) -> bool:
+        """Validate image URL before attempting download"""
+        # Skip data URIs
+        if url.startswith('data:'):
+            return False
+
+        # Skip placeholder SVGs
+        if 'svg+xml' in url.lower() and ('xmlns' in url or 'svg' in url):
+            return False
+
+        # Must be HTTP/HTTPS
+        if not url.startswith(('http://', 'https://')):
+            return False
+
+        # Skip obviously invalid URLs
+        if len(url) < 10:
+            return False
+
+        return True

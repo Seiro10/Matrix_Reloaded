@@ -113,50 +113,32 @@ async def get_stats():
 async def debug_scrape(scraper_name: str):
     """Debug what the scraper sees"""
     try:
-        if scraper_name == "league_of_legends":
-            from scrapers.stuffgaming.league_of_legends import LeagueOfLegendsScraper
-            scraper = LeagueOfLegendsScraper()
-
-            # Get the raw HTML to inspect
-            soup = scraper.fetch_page(scraper.base_url)
-
-            # Find different types of potential article containers
-            debug_info = {
-                "url": scraper.base_url,
-                "title": soup.title.string if soup.title else "No title",
-                "articles": len(soup.find_all('article')),
-                "divs_with_news": len(soup.find_all('div', class_=lambda x: x and 'news' in x.lower())),
-                "divs_with_article": len(soup.find_all('div', class_=lambda x: x and 'article' in x.lower())),
-                "divs_with_post": len(soup.find_all('div', class_=lambda x: x and 'post' in x.lower())),
-                "divs_with_card": len(soup.find_all('div', class_=lambda x: x and 'card' in x.lower())),
-                "all_links": len(soup.find_all('a', href=True)),
-                "h1_count": len(soup.find_all('h1')),
-                "h2_count": len(soup.find_all('h2')),
-                "h3_count": len(soup.find_all('h3')),
-            }
-
-            # Get sample class names to understand the structure
-            sample_classes = []
-            for div in soup.find_all('div', class_=True)[:20]:
-                if div.get('class'):
-                    sample_classes.extend(div.get('class'))
-
-            debug_info["sample_classes"] = list(set(sample_classes))[:30]
-
-            # Get first few links with their text
-            links_sample = []
-            for link in soup.find_all('a', href=True)[:10]:
-                links_sample.append({
-                    "text": link.get_text(strip=True)[:100],
-                    "href": link.get('href'),
-                    "class": link.get('class')
-                })
-
-            debug_info["sample_links"] = links_sample
-
-            return debug_info
+        if scraper_name == "test_scraper":
+            from scrapers.stuffgaming.test_scraper import TestScraper
+            scraper = TestScraper()
         else:
-            return {"error": f"Unknown scraper: {scraper_name}"}
+            # Use unified scraper for all other sites
+            from scrapers.stuffgaming.unified_riot_scraper import UnifiedRiotScraper
+            scraper = UnifiedRiotScraper(scraper_name)
+
+        # Get the raw HTML to inspect
+        soup = scraper.fetch_page(scraper.base_url)
+
+        # Debug info
+        debug_info = {
+            "scraper": scraper_name,
+            "url": scraper.base_url,
+            "title": soup.title.string if soup.title else "No title",
+            "articles": len(soup.find_all('article')),
+            "all_links": len(soup.find_all('a', href=True)),
+            "news_links": len(soup.find_all('a', href=lambda x: x and '/news/' in x)),
+            "banner_testid_exists": bool(soup.find('img', {'data-testid': 'banner-image'})),
+            "banner_class_exists": bool(soup.find('img', class_='banner-image')),
+            "html_length": len(str(soup)),
+            "use_playwright": getattr(scraper, 'use_playwright', False)
+        }
+
+        return debug_info
 
     except Exception as e:
         return {"error": str(e)}
@@ -383,6 +365,126 @@ async def debug_aws():
         "env_access_key_length": len(os.getenv('AWS_ACCESS_KEY_ID', '')),
         "env_secret_key_length": len(os.getenv('AWS_SECRET_ACCESS_KEY', ''))
     }
+
+
+@app.get("/debug-banner/{scraper_name}")
+async def debug_banner(scraper_name: str):
+    """Debug banner image extraction"""
+    try:
+        from scrapers.stuffgaming.unified_riot_scraper import UnifiedRiotScraper
+
+        scraper = UnifiedRiotScraper(scraper_name)
+        soup = scraper.fetch_page(scraper.base_url)
+
+        # Test banner extraction
+        banner_image = scraper.extract_banner_image(
+            soup,
+            scraper.config.banner_selectors,
+            scraper.base_url.split('/fr-fr')[0]
+        )
+
+        # Check if banner elements exist
+        banner_testid = soup.find('img', {'data-testid': 'banner-image'})
+        banner_class = soup.find('img', class_='banner-image')
+
+        return {
+            "scraper": scraper_name,
+            "base_url": scraper.base_url,
+            "banner_found": banner_image,
+            "banner_testid_exists": bool(banner_testid),
+            "banner_class_exists": bool(banner_class),
+            "banner_testid_src": banner_testid.get('src') if banner_testid else None,
+            "banner_class_src": banner_class.get('src') if banner_class else None,
+            "html_contains_testid": 'data-testid="banner-image"' in str(soup),
+            "html_length": len(str(soup))
+        }
+
+    except Exception as e:
+        return {"error": str(e)}
+
+
+@app.get("/test-playwright-install")
+async def test_playwright_install():
+    """Test Playwright installation"""
+    import subprocess
+    import os
+    try:
+
+        # Check if Playwright is installed
+        result = subprocess.run(
+            ["python", "-m", "playwright", "install-deps"],
+            capture_output=True,
+            text=True,
+            cwd="/app"
+        )
+
+        # Try to use Playwright
+        from playwright.sync_api import sync_playwright
+
+        with sync_playwright() as p:
+            browser = p.chromium.launch(headless=True)
+            page = browser.new_page()
+            page.goto("https://example.com")
+            title = page.title()
+            browser.close()
+
+        return {
+            "status": "success",
+            "playwright_working": True,
+            "test_title": title,
+            "user": os.getenv("USER", "unknown"),
+            "home": os.getenv("HOME", "unknown")
+        }
+    except Exception as e:
+        return {
+            "status": "error",
+            "playwright_working": False,
+            "error": str(e),
+            "user": os.getenv("USER", "unknown"),
+            "home": os.getenv("HOME", "unknown")
+        }
+
+
+@app.get("/force-playwright-install")
+async def force_playwright_install():
+    """Force install Playwright browsers"""
+    try:
+        import subprocess
+        import os
+
+        # Try to install Playwright browsers
+        result = subprocess.run(
+            ["python", "-m", "playwright", "install", "chromium"],
+            capture_output=True,
+            text=True,
+            cwd="/app"
+        )
+
+        install_output = result.stdout + result.stderr
+
+        # Test if it works
+        from playwright.sync_api import sync_playwright
+
+        with sync_playwright() as p:
+            browser = p.chromium.launch(headless=True)
+            page = browser.new_page()
+            page.goto("https://example.com")
+            title = page.title()
+            browser.close()
+
+        return {
+            "status": "success",
+            "playwright_installed": True,
+            "install_output": install_output,
+            "test_title": title
+        }
+    except Exception as e:
+        return {
+            "status": "error",
+            "playwright_installed": False,
+            "error": str(e),
+            "install_output": install_output if 'install_output' in locals() else "No output"
+        }
 
 if __name__ == "__main__":
     import uvicorn
