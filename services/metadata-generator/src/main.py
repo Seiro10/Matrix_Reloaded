@@ -96,6 +96,13 @@ def parse_csv_input(file_content: bytes) -> Dict[str, Any]:
         csv_reader = csv.DictReader(io.StringIO(csv_text))
         row = next(csv_reader)  # We only need the first row
 
+        # ADD DEBUG PRINT FOR BANNER IMAGE
+        banner_image = row.get("banner_image", "")
+        if banner_image:
+            print(f"🖼️  Banner image path received in metadata agent: {banner_image}")
+        else:
+            print("⚠️  No banner image found in CSV")
+
         return {
             "keyword": row.get("KW", ""),
             "competition": row.get("competition", ""),
@@ -105,6 +112,7 @@ def parse_csv_input(file_content: bytes) -> Dict[str, Any]:
             "monthly_searches": row.get("monthly_searches", 0),
             "people_also_ask": row.get("people_also_ask", "").split("; ") if row.get("people_also_ask") else [],
             "forum": row.get("forum", "").split("; ") if row.get("forum") else [],
+            "banner_image": banner_image,  # ADD THIS LINE
             # Top competitors data
             "competitors": [
                 {
