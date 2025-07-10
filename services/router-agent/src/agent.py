@@ -1164,6 +1164,13 @@ def create_csv_for_rss_content(rss_payload, output_dir: str = "./output") -> str
     import tempfile
 
     try:
+        # ADD DEBUG PRINT FOR BANNER IMAGE
+        banner_image = rss_payload.banner_image
+        if banner_image:
+            print(f"🖼️  Banner image path received: {banner_image}")
+        else:
+            print("⚠️  No banner image found in RSS payload")
+
         # Create temporary CSV file
         temp_file = tempfile.NamedTemporaryFile(mode='w', delete=False, suffix='.csv', encoding='utf-8')
         writer = csv.writer(temp_file)
@@ -1171,7 +1178,7 @@ def create_csv_for_rss_content(rss_payload, output_dir: str = "./output") -> str
         # Header must match exactly what metadata generator expects
         header = [
             'KW', 'competition', 'Site', 'language', 'confidence', 'monthly_searches',
-            'people_also_ask', 'forum',
+            'people_also_ask', 'forum', 'banner_image',  # ADD banner_image TO HEADER
             'position1', 'title1', 'url1', 'snippet1', 'content1', 'structure1', 'headlines1', 'metadescription1',
             'position2', 'title2', 'url2', 'snippet2', 'content2', 'structure2', 'headlines2', 'metadescription2',
             'position3', 'title3', 'url3', 'snippet3', 'content3', 'structure3', 'headlines3', 'metadescription3'
@@ -1198,6 +1205,7 @@ def create_csv_for_rss_content(rss_payload, output_dir: str = "./output") -> str
             0,  # monthly_searches (not applicable)
             '',  # people_also_ask (empty)
             '',  # forum (empty)
+            banner_image or '',  # ADD banner_image TO ROW DATA
             # Competitor 1 (RSS content as reference)
             '1',  # position1
             rss_payload.title,  # title1
