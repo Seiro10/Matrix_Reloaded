@@ -15,7 +15,6 @@ class NewsScheduler:
 
         # List of all scrapers to check (unified approach)
         self.scrapers_to_check = [
-            'test_scraper',  # Keep test scraper separate
             *get_all_scraper_keys()  # All unified Riot scrapers
         ]
 
