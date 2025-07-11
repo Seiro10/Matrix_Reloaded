@@ -54,11 +54,7 @@ def scrape_website(self, scraper_name: str):
         from scrapers.stuffgaming.unified_riot_scraper import UnifiedRiotScraper
         from scrapers.stuffgaming.test_scraper import TestScraper
 
-        if scraper_name == 'test_scraper':
-            scraper = TestScraper()
-        else:
-            # Use unified scraper for ALL Riot sites including league_of_legends
-            scraper = UnifiedRiotScraper(scraper_name)
+        scraper = UnifiedRiotScraper(scraper_name)
 
         news_items = scraper.scrape_news()
 
@@ -181,7 +177,8 @@ def process_news_item(self, news_item_data: dict):
             destination_website=news_item.destination_website,
             theme=news_item.theme,
             url=news_item.url,
-            s3_image_urls=s3_image_urls  # Contains banner image URL first
+            s3_image_urls=s3_image_urls,
+            banner_image=banner_s3_url
         )
 
         # Send to copywriter

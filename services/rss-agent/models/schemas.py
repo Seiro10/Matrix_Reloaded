@@ -27,3 +27,4 @@ class CopywriterPayload(BaseModel):
     theme: str
     url: str
     s3_image_urls: List[str]
+    banner_image: Optional[str] = None
