@@ -96,6 +96,10 @@ def parse_csv_input(file_content: bytes) -> Dict[str, Any]:
         csv_reader = csv.DictReader(io.StringIO(csv_text))
         row = next(csv_reader)  # We only need the first row
 
+        # DEBUG: Print all CSV headers and values
+        print(f"🔍 CSV Headers: {list(row.keys())}")
+        print(f"🔍 CSV post_type value: '{row.get('post_type', 'NOT_FOUND')}'")
+
         # ADD DEBUG PRINT FOR BANNER IMAGE
         banner_image = row.get("banner_image", "")
         if banner_image:
@@ -103,17 +107,19 @@ def parse_csv_input(file_content: bytes) -> Dict[str, Any]:
         else:
             print("⚠️  No banner image found in CSV")
 
-        return {
+        parsed_data = {
             "keyword": row.get("KW", ""),
             "competition": row.get("competition", ""),
             "site": row.get("Site", ""),
             "language": row.get("language", "FR"),  # Default to FR if not provided
+            "post_type": row.get("post_type", ""),
             "confidence": float(row.get("confidence", 0)),
             "monthly_searches": row.get("monthly_searches", 0),
+            # Make these optional for news articles
             "people_also_ask": row.get("people_also_ask", "").split("; ") if row.get("people_also_ask") else [],
             "forum": row.get("forum", "").split("; ") if row.get("forum") else [],
-            "banner_image": banner_image, 
-            # Top competitors data
+            "banner_image": banner_image,
+            # Top competitors data - also make optional
             "competitors": [
                 {
                     "position": row.get(f"position{i}", ""),
@@ -129,6 +135,10 @@ def parse_csv_input(file_content: bytes) -> Dict[str, Any]:
                 if row.get(f"url{i}")  # Only include if URL exists
             ]
         }
+
+        print(f"🔍 Parsed post_type: '{parsed_data['post_type']}'")
+        return parsed_data
+
     except Exception as e:
         logger.error(f"Error parsing CSV: {e}")
         raise ValueError(f"Invalid CSV format: {str(e)}")
@@ -140,12 +150,19 @@ def generate_metadata(input_data: Dict[str, Any], llm) -> MetadataOutput:
     """
     keyword = input_data.get("keyword", "")
     language = input_data.get("language", "FR")
+    post_type_from_input = input_data.get("post_type", "").strip()  # ADD STRIP TO REMOVE WHITESPACE
+
+    # DEBUG: Print the post_type we received
+    print(f"🏷️  Received post_type from input: '{post_type_from_input}'")
+
     competitors = input_data.get("competitors", [])
     people_also_ask = input_data.get("people_also_ask", [])
     forum = input_data.get("forum", [])
 
-    source_content = input_data.get("source_content", "")
-    is_news = bool(source_content)  # If we have source content, it's likely news
+    # For news articles, we have richer content from the RSS feed
+    source_content = ""
+    if competitors and len(competitors) > 0:
+        source_content = competitors[0].get("content", "")
 
     # Prepare competitor data for prompt
     competitors_info = ""
@@ -167,36 +184,62 @@ Competitor {i + 1}:
     # Prepare forum data
     forum_text = "\n".join([f"- {f}" for f in forum])
 
+    # MODIFY SYSTEM PROMPT BASED ON POST TYPE
+    if post_type_from_input == "News":
+        print(f"🏷️  Using NEWS-specific prompt")
+        keyword_instruction = """1. url: Create a clean URL from the news title
+2. main_kw: Leave as empty string ""
+3. secondary_kws: Leave as empty array []"""
+        content_type_instruction = "- This is a NEWS article from RSS feed"
+        post_type_instruction = "5. post_type: MUST BE EXACTLY: News"
+    elif post_type_from_input:
+        print(f"🏷️  Using FORCED post_type: {post_type_from_input}")
+        keyword_instruction = """1. url: A clean, SEO-friendly URL path
+2. main_kw: The primary focus keyword
+3. secondary_kws: 2-3 related keywords"""
+        content_type_instruction = f"- FORCED CONTENT TYPE: {post_type_from_input} (DO NOT CHANGE THIS)"
+        post_type_instruction = f"5. post_type: MUST BE EXACTLY: {post_type_from_input}"
+    else:
+        print("🏷️  No post_type provided, using LLM detection")
+        keyword_instruction = """1. url: A clean, SEO-friendly URL path
+2. main_kw: The primary focus keyword
+3. secondary_kws: 2-3 related keywords"""
+        content_type_instruction = """- If source_content is provided, this is likely a NEWS article
+    - If competitors show product comparisons/reviews, this might be AFFILIATE content
+    - Otherwise, it's likely a GUIDE article"""
+        post_type_instruction = '5. post_type: "News", "Affiliate", or "Guide" based on content analysis'
+
     system_prompt = f"""You are a SEO metadata expert that analyzes content and creates optimal metadata for new articles.
 
     Your task is to analyze the information about a keyword and its top-ranking competitors to generate optimal metadata for a new article.
 
-    IMPORTANT: Determine the content type:
-    - If source_content is provided, this is likely a NEWS article
-    - If competitors show product comparisons/reviews, this might be AFFILIATE content
-    - Otherwise, it's likely a GUIDE article
+    IMPORTANT: Content type determination:
+    {content_type_instruction}
 
     Language detection:
     - Analyze the keyword and content to determine language
     - Common languages: FR (French), EN (English), ES (Spanish), etc.
 
     Generate the following fields:
-    1. url: A clean, SEO-friendly URL path
-    2. main_kw: The primary focus keyword
-    3. secondary_kws: 2-3 related keywords
+    {keyword_instruction}
     4. meta_description: 150-160 characters including main keyword
-    5. post_type: "News", "Affiliate", or "Guide" based on content analysis
+    {post_type_instruction}
     6. headlines: 5-7 headlines based on content type and competitors
     7. language: Auto-detected language code
 
     Respond with ONLY a valid JSON object containing these fields.
     """
 
+    # Build human prompt conditionally
+    content_type_line = f"Content Type (REQUIRED): {post_type_from_input}" if post_type_from_input else ""
+    content_type_reminder = f"IMPORTANT: Use post_type = {post_type_from_input}" if post_type_from_input else "Pay special attention to content type detection."
+
     human_prompt = f"""Here's the content to analyze:
 
     Main Keyword: {keyword}
     Language Setting: {language}
-    Source Content (if news): {source_content[:500] if source_content else "None"}
+    {content_type_line}
+    Full Content: {source_content[:1000] if source_content else "None"}
 
     Top Competitors:
     {competitors_info}
@@ -207,7 +250,7 @@ Competitor {i + 1}:
     Related Forum Topics:
     {forum_text}
 
-    Based on this data, generate the metadata JSON. Pay special attention to content type detection.
+    Based on this data, generate the metadata JSON. {content_type_reminder}
     """
 
     try:
@@ -221,6 +264,8 @@ Competitor {i + 1}:
 
         # Extract JSON from response
         content = response.content
+        print(f"🤖 LLM Raw response preview: {content[:200]}...")
+
         # Find JSON in the response (in case Claude adds extra text)
         try:
             # Try to parse the entire content as JSON first
@@ -234,6 +279,22 @@ Competitor {i + 1}:
                 metadata_dict = json.loads(json_str)
             else:
                 raise ValueError("Could not extract valid JSON from LLM response")
+
+        print(f"🤖 LLM detected post_type: '{metadata_dict.get('post_type', 'NOT_FOUND')}'")
+
+        # FORCE POST_TYPE IF PROVIDED FROM INPUT - THIS IS THE CRITICAL PART
+        if post_type_from_input:
+            original_post_type = metadata_dict.get("post_type", "")
+            metadata_dict["post_type"] = post_type_from_input
+            print(f"🏷️  FORCED post_type from '{original_post_type}' to '{post_type_from_input}'")
+
+            # For News articles, ensure keywords are empty
+            if post_type_from_input == "News":
+                metadata_dict["main_kw"] = ""
+                metadata_dict["secondary_kws"] = []
+                print(f"🏷️  Cleared keywords for News article")
+        else:
+            print(f"🏷️  Using LLM detected post_type: '{metadata_dict.get('post_type', '')}'")
 
         # Validate metadata fields
         if "meta_description" in metadata_dict and len(metadata_dict["meta_description"]) > 160:
@@ -259,18 +320,25 @@ Competitor {i + 1}:
         if "language" not in metadata_dict:
             metadata_dict["language"] = language
 
-        return MetadataOutput(**metadata_dict)
+        final_metadata = MetadataOutput(**metadata_dict)
+        print(f"🏷️  Final metadata post_type: '{final_metadata.post_type}'")
+        return final_metadata
 
     except Exception as e:
         logger.error(f"Error generating metadata: {e}")
-        # Return basic metadata as fallback
+        # Return basic metadata as fallback with proper handling for News
+        fallback_post_type = post_type_from_input or "Guide"
+        fallback_main_kw = "" if post_type_from_input == "News" else keyword
+        fallback_secondary_kws = [] if post_type_from_input == "News" else []
+
+        print(f"🏷️  Using fallback post_type: '{fallback_post_type}'")
         return MetadataOutput(
             url=f"/{keyword.lower().replace(' ', '-')}",
-            main_kw=keyword,
-            secondary_kws=[],
+            main_kw=fallback_main_kw,
+            secondary_kws=fallback_secondary_kws,
             meta_description=f"Découvrez tout sur {keyword} dans notre article complet.",
-            post_type="Guide",
-            headlines=["Introduction", "Qu'est-ce que " + keyword, "Conclusion"],
+            post_type=fallback_post_type,
+            headlines=["Introduction", "Contenu principal", "Conclusion"],
             language=language
         )
 
@@ -296,6 +364,7 @@ def forward_to_copywriter(metadata: MetadataOutput, original_csv_path: str) -> D
                 "competition": original_data.get("competition", ""),
                 "site": original_data.get("site", ""),
                 "language": original_data.get("language", "FR"),
+                "post_type": original_data.get("post_type", ""),  # ADD THIS LINE
                 "confidence": original_data.get("confidence", 0),
                 "monthly_searches": original_data.get("monthly_searches", 0),
                 "people_also_ask": original_data.get("people_also_ask", []),
@@ -314,10 +383,10 @@ def forward_to_copywriter(metadata: MetadataOutput, original_csv_path: str) -> D
         # DETERMINE WHICH ENDPOINT TO USE BASED ON POST TYPE
         if metadata.post_type == "News":
             endpoint = "/copywriter-news"  # Use news endpoint for News type
-            logger.info(f"📰 Using NEWS endpoint for post_type: {metadata.post_type}")
+            logger.info(f" Using NEWS endpoint for post_type: {metadata.post_type}")
         else:
             endpoint = "/copywriter"  # Use regular endpoint for Affiliate/Guide
-            logger.info(f"📝 Using REGULAR endpoint for post_type: {metadata.post_type}")
+            logger.info(f" Using REGULAR endpoint for post_type: {metadata.post_type}")
 
         # Send POST request to appropriate endpoint
         response = requests.post(
