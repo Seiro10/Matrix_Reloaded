@@ -2,15 +2,20 @@
 Router Agent with Human-in-the-Loop - agent.py
 Added human validation steps before routing decisions
 """
-import json
 import sys
 import os
+import io
+import csv
+import tempfile
 from typing import Dict, Any
 from datetime import datetime
 from langgraph.checkpoint.memory import InMemorySaver
 from langgraph.types import interrupt
 import requests
 import logging
+from langchain_anthropic import ChatAnthropic
+from langchain_core.messages import HumanMessage, SystemMessage
+import json
 
 # Add src directory to Python path
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
@@ -26,6 +31,14 @@ from models import RouterState, ContentFinderOutput, SiteInfo, RoutingMetadata, 
 from langgraph.graph import StateGraph, START, END
 from storage import pending_validations as _pending_validations
 logger = logging.getLogger(__name__)
+
+def get_llm():
+    """Get Claude LLM instance"""
+    return ChatAnthropic(
+        model="claude-3-5-sonnet-20241022",
+        temperature=0.3,
+        max_tokens=2000
+    )
 
 # Configuration for agent services
 REWRITER_AGENT_URL = os.getenv("REWRITER_AGENT_URL", "http://localhost:8085")
@@ -1155,104 +1168,89 @@ def create_route_agent_with_hil():
     return compiled_workflow
 
 
-def create_csv_for_rss_content(rss_payload, output_dir: str = "./output") -> str:
-    """
-    Create CSV file for metadata generator from RSS content
-    Maps RSS payload to expected CSV format
-    """
-    import csv
-    import tempfile
+def create_csv_for_rss_content(rss_payload, banner_image=None):
+    """Create CSV data for RSS content with enhanced metadata"""
 
-    try:
-        # ADD DEBUG PRINT FOR BANNER IMAGE
-        banner_image = rss_payload.banner_image
-        if banner_image:
-            print(f"🖼️  Banner image path received: {banner_image}")
-        else:
-            print("⚠️  No banner image found in RSS payload")
+    print(f"🔄 Generating enhanced metadata for RSS content...")
 
-        # Create temporary CSV file
-        temp_file = tempfile.NamedTemporaryFile(mode='w', delete=False, suffix='.csv', encoding='utf-8')
-        writer = csv.writer(temp_file)
+    # Generate enhanced metadata using Claude
+    enhanced_metadata = generate_enhanced_rss_metadata(rss_payload)
 
-        # Header must match exactly what metadata generator expects
-        header = [
-            'KW', 'competition', 'Site', 'language', 'confidence', 'monthly_searches',
-            'people_also_ask', 'forum', 'banner_image',  # ADD banner_image TO HEADER
-            'position1', 'title1', 'url1', 'snippet1', 'content1', 'structure1', 'headlines1', 'metadescription1',
-            'position2', 'title2', 'url2', 'snippet2', 'content2', 'structure2', 'headlines2', 'metadescription2',
-            'position3', 'title3', 'url3', 'snippet3', 'content3', 'structure3', 'headlines3', 'metadescription3'
-        ]
-        writer.writerow(header)
+    keyword = enhanced_metadata.get("keyword", rss_payload.title)
+    description = enhanced_metadata.get("description", "")
+    meta_description = enhanced_metadata.get("meta_description", "")
+    language = enhanced_metadata.get("language", "FR")
+    real_title = enhanced_metadata.get("real_title", rss_payload.title)  # USE REAL TITLE
 
-        # Map RSS payload to CSV row
-        keyword = rss_payload.title
+    print(f"✅ Enhanced metadata generated:")
+    print(f"   📰 Original RSS title: {rss_payload.title}")
+    print(f"   📰 Real title: {real_title}")
+    print(f"   📝 Keyword: {keyword}")
+    print(f"   📄 Description: {description[:100]}...")
+    print(f"   🔍 Meta description: {meta_description}")
+    print(f"   🌐 Language: {language}")
 
-        # Prepare content snippets
-        content_snippet = rss_payload.content[:200] if rss_payload.content else ""
-        meta_description = rss_payload.content[:160] if rss_payload.content else ""
+    # Header must match exactly what metadata generator expects
+    header = [
+        'KW', 'competition', 'Site', 'language', 'confidence', 'monthly_searches',
+        'people_also_ask', 'forum', 'banner_image', 'post_type',
+        'position1', 'title1', 'url1', 'snippet1', 'content1', 'structure1', 'headlines1', 'metadescription1',
+        'position2', 'title2', 'url2', 'snippet2', 'content2', 'structure2', 'headlines2', 'metadescription2',
+        'position3', 'title3', 'url3', 'snippet3', 'content3', 'structure3', 'headlines3', 'metadescription3'
+    ]
 
-        main_image_info = f"\nMain Image: {rss_payload.main_image}" if rss_payload.main_image else ""
-        full_content = f"{rss_payload.content}{main_image_info}"
+    # Create row data with enhanced metadata
+    row = [
+        keyword,  # KW - enhanced keyword from Claude
+        'LOW',  # competition - keep as LOW as requested
+        rss_payload.destination_website,  # Site
+        language,  # language - detected by Claude
+        '1.0',  # confidence (high for RSS)
+        0,  # monthly_searches (not applicable for news)
+        '',  # people_also_ask (empty for news)
+        '',  # forum (empty for news)
+        banner_image or '',  # banner_image
+        rss_payload.post_type,  # post_type (should be "News")
+        # Competitor 1 (RSS content as reference)
+        '1',  # position1
+        real_title,  # title1 - USE REAL TITLE HERE
+        rss_payload.url,  # url1 - use source URL
+        description[:150],  # snippet1 - use enhanced description
+        rss_payload.content[:1000],  # content1 - first 1000 chars of content
+        '',  # structure1 (empty)
+        '',  # headlines1 (empty for news)
+        meta_description,  # metadescription1 - enhanced meta description
+        # Competitors 2 and 3 (empty for RSS)
+        '', '', '', '', '', '', '', '',  # position2 through metadescription2
+        '', '', '', '', '', '', '', ''  # position3 through metadescription3
+    ]
 
-        # RSS content becomes "competitor 1" (the reference content)
-        row = [
-            keyword,  # KW
-            'LOW',
-            rss_payload.destination_website,  # Site
-            'FR',  # language
-            '1.0',  # confidence (high for RSS)
-            0,  # monthly_searches (not applicable)
-            '',  # people_also_ask (empty)
-            '',  # forum (empty)
-            banner_image or '',  # ADD banner_image TO ROW DATA
-            rss_payload.post_type,
-            '1',  # position1
-            rss_payload.title,  # title1
-            rss_payload.url,  # url1
-            content_snippet,  # snippet1
-            full_content,  # content1 - MODIFIED TO INCLUDE MAIN IMAGE
-            '',  # structure1 (empty)
-            '',  # headlines1 (empty)
-            meta_description,  # metadescription1
-            # Competitor 2 (empty)
-            '', '', '', '', '', '', '', '',
-            # Competitor 3 (empty)
-            '', '', '', '', '', '', '', ''
-        ]
+    # Create CSV content
+    csv_content = io.StringIO()
+    writer = csv.writer(csv_content)
+    writer.writerow(header)
+    writer.writerow(row)
 
-        writer.writerow(row)
-        temp_file.close()
+    # Save to temporary file
+    with tempfile.NamedTemporaryFile(mode='w', delete=False, suffix='.csv', encoding='utf-8') as temp_file:
+        temp_file.write(csv_content.getvalue())
+        temp_filename = temp_file.name
 
-        # Verify file was created
-        if os.path.exists(temp_file.name):
-            file_size = os.path.getsize(temp_file.name)
-            logger.info(f"✅ Created CSV for RSS content: {temp_file.name}")
-            logger.info(f"   📰 Title: {keyword}")
-            logger.info(f"   🏢 Destination: {rss_payload.destination_website}")
-            logger.info(f"   📁 File size: {file_size} bytes")
-            logger.info(f"   🔗 Source URL: {rss_payload.url}")
+    # Debug info
+    csv_lines = csv_content.getvalue().strip().split('\n')
+    file_size = len(csv_content.getvalue().encode('utf-8'))
 
-            # Log first few lines for debugging
-            with open(temp_file.name, 'r', encoding='utf-8') as f:
-                lines = f.readlines()
-                logger.info(f"   📋 CSV has {len(lines)} lines")
-                if len(lines) > 0:
-                    logger.info(f"   📄 Header: {lines[0].strip()}")
-                if len(lines) > 1:
-                    logger.info(f"   📄 Data: {lines[1][:100]}...")
+    logger.info(f"✅ Created enhanced CSV for RSS content: {temp_filename}")
+    logger.info(f"   📰 Original title: {rss_payload.title}")
+    logger.info(f"   📰 Real title: {real_title}")
+    logger.info(f"   📝 Enhanced Keyword: {keyword}")
+    logger.info(f"   🏢 Destination: {rss_payload.destination_website}")
+    logger.info(f"   📁 File size: {file_size} bytes")
+    logger.info(f"   🔗 Source URL: {rss_payload.url}")
+    logger.info(f"   📋 CSV has {len(csv_lines)} lines")
 
-            return temp_file.name
-        else:
-            logger.error(f"❌ CSV file was not created: {temp_file.name}")
-            return None
+    return temp_filename
 
-    except Exception as e:
-        logger.error(f"❌ Error creating CSV for RSS content: {e}")
-        logger.error(f"❌ Exception type: {type(e)}")
-        import traceback
-        logger.error(f"❌ Traceback: {traceback.format_exc()}")
-        return None
 
 async def process_content_finder_output_with_api_hil(content_data: ContentFinderOutput) -> Dict[str, Any]:
     """
@@ -1517,4 +1515,85 @@ async def process_content_finder_output_hil(content_data: ContentFinderOutput) -
             "routing_decision": None,
             "payload": None,
             "agent_response": None
+        }
+
+
+def generate_enhanced_rss_metadata(rss_payload) -> dict:
+    """
+    Use Claude to generate better metadata for RSS content
+    """
+    try:
+        llm = get_llm()
+
+        system_prompt = """You are a content analyst that extracts and generates metadata from news articles.
+
+Your task is to analyze RSS content and generate optimal metadata fields.
+
+IMPORTANT: The title provided might be generic (like "MISES À JOUR DU JEU"). Look at the CONTENT to find the real, specific news title.
+
+Generate the following fields:
+1. keyword: A clear, SEO-friendly keyword that represents the main topic
+2. description: A concise 2-3 sentence description of what this news article is about
+3. meta_description: A compelling 150-160 character meta description for SEO
+4. language: Auto-detect language (FR, EN, ES, etc.)
+5. real_title: Extract the REAL news title from the content (not the generic RSS title)
+
+Respond with ONLY a valid JSON object containing these fields."""
+
+        human_prompt = f"""Analyze this news content and extract the REAL title:
+
+RSS Title (might be generic): {rss_payload.title}
+Content: {rss_payload.content[:2000]}  
+Website: {rss_payload.website}
+Theme: {rss_payload.theme}
+URL: {rss_payload.url}
+
+IMPORTANT: Look in the content for the actual news title, not just use the RSS title which might be generic.
+
+Generate the metadata JSON based on this content."""
+
+        response = llm.invoke([
+            SystemMessage(content=system_prompt),
+            HumanMessage(content=human_prompt)
+        ])
+
+        # Parse the JSON response
+        content = response.content.strip()
+
+        # Try to extract JSON
+        try:
+            metadata = json.loads(content)
+        except json.JSONDecodeError:
+            # Fallback if JSON parsing fails
+            start_idx = content.find('{')
+            end_idx = content.rfind('}') + 1
+            if start_idx != -1 and end_idx > start_idx:
+                json_str = content[start_idx:end_idx]
+                metadata = json.loads(json_str)
+            else:
+                raise ValueError("Could not extract valid JSON")
+
+        # Use the real title if Claude found one, otherwise use original
+        real_title = metadata.get("real_title", rss_payload.title)
+
+        print(f"🤖 Generated metadata:")
+        print(f"   📰 Original title: {rss_payload.title}")
+        print(f"   📰 Real title: {real_title}")
+        print(f"   📝 Keyword: {metadata.get('keyword', '')}")
+        print(f"   🌐 Language: {metadata.get('language', 'FR')}")
+
+        return {
+            **metadata,
+            "real_title": real_title
+        }
+
+    except Exception as e:
+        print(f"❌ Error generating enhanced metadata: {e}")
+        # Fallback to basic metadata
+        return {
+            "keyword": rss_payload.title,
+            "description": rss_payload.content[:200] + "..." if len(rss_payload.content) > 200 else rss_payload.content,
+            "meta_description": f"Découvrez les dernières actualités: {rss_payload.title}"[:160],
+            "language": "FR",
+            "real_title": rss_payload.title
         }

@@ -66,11 +66,8 @@ class OutputPayload(BaseModel):
     internal_linking_suggestions: List[str]
     routing_metadata: RoutingMetadata
     existing_content: Optional[Dict[str, Any]] = None
-    # LLM reasoning field
     llm_reasoning: Optional[str] = None
-    # CSV file path
     csv_file: Optional[str] = None
-    # Agent response
     agent_response: Optional[AgentResponse] = None
 
 
@@ -83,16 +80,12 @@ class RouterResponse(BaseModel):
     payload: Optional[OutputPayload] = None
     internal_linking_suggestions: Optional[List[str]] = None
     error: Optional[str] = None
-    # LLM-specific fields
     llm_reasoning: Optional[str] = None
     is_llm_powered: Optional[bool] = False
-    # Human validation fields
     is_human_validated: Optional[bool] = False
     human_approval: Optional[str] = None
     final_action: Optional[str] = None
-    # CSV file path
     csv_file: Optional[str] = None
-    # Agent response
     agent_response: Optional[AgentResponse] = None
 
 
