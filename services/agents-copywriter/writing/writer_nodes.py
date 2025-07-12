@@ -43,11 +43,6 @@ def merge_sections_node(state):
     "paragraph": "Description.\n\n**Avantages :**\n- ✅ Point positif 1\n- ✅ Point positif 2\n\n**Inconvénients :**\n- ❌ Point négatif 1"
     ```
 
-    **Tables**: Use proper markdown table format:
-    ```
-    "paragraph": "Description.\n\n| Colonne 1 | Colonne 2 |\n|-----------|----------|\n| Valeur 1 | Valeur 2 |\n| Valeur 3 | Valeur 4 |"
-    ```
-
     ### IMPORTANT: USE THESE EXACT HEADLINES
     You MUST use these specific headlines in your article structure:
     {headlines_text}

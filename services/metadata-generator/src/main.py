@@ -112,7 +112,7 @@ def parse_csv_input(file_content: bytes) -> Dict[str, Any]:
             "monthly_searches": row.get("monthly_searches", 0),
             "people_also_ask": row.get("people_also_ask", "").split("; ") if row.get("people_also_ask") else [],
             "forum": row.get("forum", "").split("; ") if row.get("forum") else [],
-            "banner_image": banner_image,  # ADD THIS LINE
+            "banner_image": banner_image, 
             # Top competitors data
             "competitors": [
                 {
@@ -144,6 +144,9 @@ def generate_metadata(input_data: Dict[str, Any], llm) -> MetadataOutput:
     people_also_ask = input_data.get("people_also_ask", [])
     forum = input_data.get("forum", [])
 
+    source_content = input_data.get("source_content", "")
+    is_news = bool(source_content)  # If we have source content, it's likely news
+
     # Prepare competitor data for prompt
     competitors_info = ""
     for i, comp in enumerate(competitors):
@@ -164,40 +167,48 @@ Competitor {i + 1}:
     # Prepare forum data
     forum_text = "\n".join([f"- {f}" for f in forum])
 
-    # Create prompt for Claude
     system_prompt = f"""You are a SEO metadata expert that analyzes content and creates optimal metadata for new articles.
-Your task is to analyze the information about a keyword and its top-ranking competitors to generate optimal metadata for a new article.
-You should produce metadata in the language indicated (default: French).
 
-Current language setting: {language}
+    Your task is to analyze the information about a keyword and its top-ranking competitors to generate optimal metadata for a new article.
 
-Generate the following fields:
-1. url: A clean, SEO-friendly URL path (without domain) based on the main keyword and type of content
-2. main_kw: The primary focus keyword for the article
-3. secondary_kws: 2-3 important related keywords to include in the content
-4. meta_description: An engaging meta description of exactly 150-160 characters that includes the main keyword
-5. post_type: Determine if this should be an "Affiliate", "News", or "Guide" type of article
-6. headlines: 5-7 compelling headlines (H2) that should be included in the article based on competitor analysis
+    IMPORTANT: Determine the content type:
+    - If source_content is provided, this is likely a NEWS article
+    - If competitors show product comparisons/reviews, this might be AFFILIATE content
+    - Otherwise, it's likely a GUIDE article
 
-Respond with ONLY a valid JSON object containing these fields.
-"""
+    Language detection:
+    - Analyze the keyword and content to determine language
+    - Common languages: FR (French), EN (English), ES (Spanish), etc.
+
+    Generate the following fields:
+    1. url: A clean, SEO-friendly URL path
+    2. main_kw: The primary focus keyword
+    3. secondary_kws: 2-3 related keywords
+    4. meta_description: 150-160 characters including main keyword
+    5. post_type: "News", "Affiliate", or "Guide" based on content analysis
+    6. headlines: 5-7 headlines based on content type and competitors
+    7. language: Auto-detected language code
+
+    Respond with ONLY a valid JSON object containing these fields.
+    """
 
     human_prompt = f"""Here's the content to analyze:
 
-Main Keyword: {keyword}
-Language: {language}
+    Main Keyword: {keyword}
+    Language Setting: {language}
+    Source Content (if news): {source_content[:500] if source_content else "None"}
 
-Top Competitors:
-{competitors_info}
+    Top Competitors:
+    {competitors_info}
 
-People Also Ask:
-{paa_text}
+    People Also Ask:
+    {paa_text}
 
-Related Forum Topics:
-{forum_text}
+    Related Forum Topics:
+    {forum_text}
 
-Based on this data, generate the metadata JSON as instructed.
-"""
+    Based on this data, generate the metadata JSON. Pay special attention to content type detection.
+    """
 
     try:
         # Call Claude
@@ -277,7 +288,7 @@ def forward_to_copywriter(metadata: MetadataOutput, original_csv_path: str) -> D
 
         original_data = parse_csv_input(csv_content)
 
-        # Prepare payload in CopywriterRequest format that matches your server.py
+        # Prepare payload in CopywriterRequest format
         payload = {
             "metadata": metadata.dict(),
             "keyword_data": {
@@ -289,7 +300,9 @@ def forward_to_copywriter(metadata: MetadataOutput, original_csv_path: str) -> D
                 "monthly_searches": original_data.get("monthly_searches", 0),
                 "people_also_ask": original_data.get("people_also_ask", []),
                 "forum": original_data.get("forum", []),
-                "competitors": original_data.get("competitors", [])
+                "competitors": original_data.get("competitors", []),
+                "banner_image": original_data.get("banner_image", ""),  # Banner image
+                "source_content": original_data.get("source_content", "")  # RSS content
             },
             "session_metadata": {
                 "source": "metadata_generator",
@@ -298,12 +311,20 @@ def forward_to_copywriter(metadata: MetadataOutput, original_csv_path: str) -> D
             }
         }
 
-        # Send POST request to copywriter agent using the correct endpoint
+        # DETERMINE WHICH ENDPOINT TO USE BASED ON POST TYPE
+        if metadata.post_type == "News":
+            endpoint = "/copywriter-news"  # Use news endpoint for News type
+            logger.info(f"📰 Using NEWS endpoint for post_type: {metadata.post_type}")
+        else:
+            endpoint = "/copywriter"  # Use regular endpoint for Affiliate/Guide
+            logger.info(f"📝 Using REGULAR endpoint for post_type: {metadata.post_type}")
+
+        # Send POST request to appropriate endpoint
         response = requests.post(
-            f"{COPYWRITER_AGENT_URL}/copywriter",  # Fixed endpoint name
+            f"{COPYWRITER_AGENT_URL}{endpoint}",  # Dynamic endpoint
             json=payload,
             headers={"Content-Type": "application/json"},
-            timeout=120  # Longer timeout for content generation
+            timeout=120
         )
 
         if response.status_code == 200:
@@ -311,11 +332,11 @@ def forward_to_copywriter(metadata: MetadataOutput, original_csv_path: str) -> D
             logger.info(f"✅ Successfully forwarded to copywriter")
             return {
                 "success": True,
-                "message": "Successfully forwarded to copywriter agent",
+                "message": f"Successfully forwarded to copywriter agent ({endpoint})",
                 "copywriter_response": result,
-                "article_id": result.get("wordpress_post_id"),  # Changed from article_id to wordpress_post_id
+                "article_id": result.get("wordpress_post_id"),
                 "content": result.get("content", ""),
-                "status": result.get("status", "success")  # Use status from copywriter response
+                "status": result.get("status", "success")
             }
         else:
             logger.error(f"❌ Copywriter agent returned error: {response.status_code}")
@@ -327,26 +348,6 @@ def forward_to_copywriter(metadata: MetadataOutput, original_csv_path: str) -> D
                 "error": response.text,
                 "status": "failed"
             }
-
-    except requests.exceptions.Timeout:
-        logger.error(f"❌ Timeout calling copywriter agent")
-        return {
-            "success": False,
-            "message": "Timeout calling copywriter agent",
-            "copywriter_response": None,
-            "error": "Request timeout",
-            "status": "timeout"
-        }
-
-    except requests.exceptions.ConnectionError:
-        logger.error(f"❌ Connection error calling copywriter agent")
-        return {
-            "success": False,
-            "message": "Could not connect to copywriter agent",
-            "copywriter_response": None,
-            "error": "Connection error",
-            "status": "connection_error"
-        }
 
     except Exception as e:
         logger.error(f"❌ Error forwarding to copywriter: {e}")
