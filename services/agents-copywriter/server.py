@@ -94,6 +94,33 @@ async def health_check():
     }
 
 
+@app.post("/copywriter-news")
+async def write_news_article(request: CopywriterRequest):
+    """Generate news article without interviews"""
+    try:
+        # Import here to avoid circular imports
+        from core.queue_manager import queue_manager
+
+        # Queue the news task
+        task_id = queue_manager.queue_news_task(
+            request_data=request.model_dump(),
+            priority=5
+        )
+
+        logger.info(f"[API] Queued news request {task_id}")
+
+        return {
+            "success": True,
+            "message": "News request queued successfully",
+            "task_id": task_id,
+            "status": "queued"
+        }
+
+    except Exception as e:
+        logger.error(f"[API] Error queuing news request: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
 @app.get("/agents")
 async def list_agents():
     """List all registered agents"""

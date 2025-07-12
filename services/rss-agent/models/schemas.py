@@ -12,7 +12,8 @@ class NewsItem(BaseModel):
     url: str
     published_date: datetime
     s3_image_urls: Optional[List[str]] = []
-    banner_image: Optional[str] = None 
+    banner_image: Optional[str] = None
+    post_type: str = "News"
 
 class RSSFeedData(BaseModel):
     items: List[NewsItem]

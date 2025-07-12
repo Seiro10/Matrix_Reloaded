@@ -102,7 +102,8 @@ class ContentProcessor:
                 "s3_image_urls": payload.s3_image_urls,
                 "main_image": payload.s3_image_urls[0] if payload.s3_image_urls else (
                     payload.images[0] if payload.images else ""),
-                "banner_image": payload.banner_image
+                "banner_image": payload.banner_image,
+                "post_type": "News"
             }
 
             logger.info("[DEBUG] === SENDING TO ROUTER AGENT ===")

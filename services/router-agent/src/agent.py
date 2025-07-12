@@ -128,7 +128,7 @@ def create_csv_for_metadata_generator(keyword: str, keyword_data: Dict[str, Any]
         # FIXED: Header must match exactly what metadata generator expects
         header = [
             'KW', 'competition', 'Site', 'language', 'confidence', 'monthly_searches',
-            'people_also_ask', 'forum',
+            'people_also_ask', 'forum', 'banner_image', 'post_type',
             'position1', 'title1', 'url1', 'snippet1', 'content1', 'structure1', 'headlines1', 'metadescription1',
             'position2', 'title2', 'url2', 'snippet2', 'content2', 'structure2', 'headlines2', 'metadescription2',
             'position3', 'title3', 'url3', 'snippet3', 'content3', 'structure3', 'headlines3', 'metadescription3'
@@ -1198,7 +1198,7 @@ def create_csv_for_rss_content(rss_payload, output_dir: str = "./output") -> str
         # RSS content becomes "competitor 1" (the reference content)
         row = [
             keyword,  # KW
-            'News',  # competition - CHANGED FROM 'LOW' TO 'News'
+            'LOW',
             rss_payload.destination_website,  # Site
             'FR',  # language
             '1.0',  # confidence (high for RSS)
@@ -1206,7 +1206,7 @@ def create_csv_for_rss_content(rss_payload, output_dir: str = "./output") -> str
             '',  # people_also_ask (empty)
             '',  # forum (empty)
             banner_image or '',  # ADD banner_image TO ROW DATA
-            # Competitor 1 (RSS content as reference)
+            rss_payload.post_type,
             '1',  # position1
             rss_payload.title,  # title1
             rss_payload.url,  # url1

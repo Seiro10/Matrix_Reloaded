@@ -10,7 +10,6 @@ import requests
 import markdown
 from slugify import slugify
 import ast
-# ADD THIS LINE:
 from typing import List
 
 
@@ -466,6 +465,17 @@ def markdown_to_html(markdown_content: str) -> str:
 
 
 def post_article_to_wordpress(article_json: dict, jwt_token: str, html: str = None) -> str:
+    """
+    Backward compatibility - calls new function without image
+    """
+    return post_article_to_wordpress_with_image(article_json, jwt_token, html, None)
+
+
+def post_article_to_wordpress_with_image(article_json: dict, jwt_token: str, html: str = None,
+                                         banner_image: str = None) -> str:
+    """
+    Post article to WordPress with optional banner image as featured image
+    """
     post_url = "https://stuffgaming.fr/wp-json/wp/v2/posts"
     headers = {
         "Authorization": f"Bearer {jwt_token}",
@@ -478,19 +488,70 @@ def post_article_to_wordpress(article_json: dict, jwt_token: str, html: str = No
         "content": html or "",
         "status": "private"
     }
-    res = None
+
+    # Step 1: Create the post
     try:
-        print(f"[DEBUG] ➕ Envoi de la création d'article vers {post_url}")
+        print(f"[DEBUG] ➕ Creating WordPress post...")
         res = requests.post(post_url, headers=headers, json=payload)
         res.raise_for_status()
         article_id = res.json().get("id")
-        print(f"[✅] Article créé avec succès: ID = {article_id}")
+        print(f"[✅] Article created successfully: ID = {article_id}")
+
+        # Step 2: Upload and set banner image if provided
+        if banner_image and article_id:
+            print(f"[DEBUG] 🖼️ Setting banner image: {banner_image}")
+            set_featured_image(article_id, banner_image, jwt_token)
+
         return article_id
+
     except Exception as e:
-        print(f"[ERROR] ❌ Échec de création de l'article : {e}")
-        if res is not None:
+        print(f"[ERROR] ❌ Failed to create article: {e}")
+        if 'res' in locals() and res is not None:
             print(f"[DEBUG] ↪ Status: {res.status_code}")
             print(f"[DEBUG] ↪ Response: {res.text}")
+        return None
+
+
+def set_featured_image(post_id: int, image_path: str, jwt_token: str):
+    """
+    Upload image and set as featured image for a WordPress post
+    """
+    try:
+        # Check if image file exists
+        if not os.path.exists(image_path):
+            print(f"[WARNING] ⚠️ Image file not found: {image_path}")
+            return None
+
+        # Upload image to WordPress media library
+        media_url = "https://stuffgaming.fr/wp-json/wp/v2/media"
+        headers = {
+            "Authorization": f"Bearer {jwt_token}",
+        }
+
+        with open(image_path, 'rb') as img_file:
+            files = {
+                'file': (os.path.basename(image_path), img_file, 'image/jpeg')
+            }
+
+            print(f"[DEBUG] 📤 Uploading image to WordPress...")
+            media_response = requests.post(media_url, headers=headers, files=files)
+            media_response.raise_for_status()
+
+            media_id = media_response.json().get("id")
+            print(f"[DEBUG] ✅ Image uploaded with ID: {media_id}")
+
+            # Set as featured image
+            update_url = f"https://stuffgaming.fr/wp-json/wp/v2/posts/{post_id}"
+            update_payload = {"featured_media": media_id}
+
+            update_response = requests.post(update_url, headers=headers, json=update_payload)
+            update_response.raise_for_status()
+
+            print(f"[✅] Featured image set successfully for post {post_id}")
+            return media_id
+
+    except Exception as e:
+        print(f"[ERROR] ❌ Failed to set featured image: {e}")
         return None
 
 
