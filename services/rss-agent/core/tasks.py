@@ -178,7 +178,8 @@ def process_news_item(self, news_item_data: dict):
             theme=news_item.theme,
             url=news_item.url,
             s3_image_urls=s3_image_urls,
-            banner_image=banner_s3_url
+            banner_image=banner_s3_url,
+            original_post_url=news_item.url
         )
 
         # Send to copywriter

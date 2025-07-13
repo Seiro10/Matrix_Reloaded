@@ -107,6 +107,13 @@ def parse_csv_input(file_content: bytes) -> Dict[str, Any]:
         else:
             print("⚠️  No banner image found in CSV")
 
+        # ADD DEBUG PRINT FOR ORIGINAL POST URL
+        original_post_url = row.get("original_post_url", "")
+        if original_post_url:
+            print(f"🔗 Original post URL received in metadata agent: {original_post_url}")
+        else:
+            print("⚠️  No original post URL found in CSV")
+
         parsed_data = {
             "keyword": row.get("KW", ""),
             "competition": row.get("competition", ""),
@@ -119,6 +126,7 @@ def parse_csv_input(file_content: bytes) -> Dict[str, Any]:
             "people_also_ask": row.get("people_also_ask", "").split("; ") if row.get("people_also_ask") else [],
             "forum": row.get("forum", "").split("; ") if row.get("forum") else [],
             "banner_image": banner_image,
+            "original_post_url": original_post_url,  # ADD THIS LINE
             # Top competitors data - also make optional
             "competitors": [
                 {
@@ -137,6 +145,7 @@ def parse_csv_input(file_content: bytes) -> Dict[str, Any]:
         }
 
         print(f"🔍 Parsed post_type: '{parsed_data['post_type']}'")
+        print(f"🔍 Parsed original_post_url: '{parsed_data['original_post_url']}'")  # ADD DEBUG LOG
         return parsed_data
 
     except Exception as e:
@@ -364,13 +373,14 @@ def forward_to_copywriter(metadata: MetadataOutput, original_csv_path: str) -> D
                 "competition": original_data.get("competition", ""),
                 "site": original_data.get("site", ""),
                 "language": original_data.get("language", "FR"),
-                "post_type": original_data.get("post_type", ""),  # ADD THIS LINE
+                "post_type": original_data.get("post_type", ""),
                 "confidence": original_data.get("confidence", 0),
                 "monthly_searches": original_data.get("monthly_searches", 0),
                 "people_also_ask": original_data.get("people_also_ask", []),
                 "forum": original_data.get("forum", []),
                 "competitors": original_data.get("competitors", []),
                 "banner_image": original_data.get("banner_image", ""),  # Banner image
+                "original_post_url": original_data.get("original_post_url", ""),  # ADD THIS LINE
                 "source_content": original_data.get("source_content", "")  # RSS content
             },
             "session_metadata": {
