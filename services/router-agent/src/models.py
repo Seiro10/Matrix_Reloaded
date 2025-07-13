@@ -140,6 +140,8 @@ class RSSPayload(BaseModel):
     main_image: Optional[str] = None
     banner_image: Optional[str] = None
     post_type: str = "News"
+    original_post_url: str
+
 
 class ContentFinderOutput(BaseModel):
     keywords_data: Dict[str, KeywordData]
