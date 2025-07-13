@@ -172,28 +172,21 @@ def process_news_copywriter(self, task_id: str, request_data: dict):
 
         from metadata_model import CopywriterRequest
         from workflow.news_pipeline import run_news_article_pipeline
-        from core.queue_manager import queue_manager
 
         # Parse request
         request = CopywriterRequest(**request_data)
-
-        # Update task status
-        queue_manager.update_task_status(task_id, "processing")
 
         # Run news pipeline
         result = run_news_article_pipeline(request)
 
         if result:
-            queue_manager.update_task_status(task_id, "completed", {"wordpress_post_id": result})
             logger.info(f"[CELERY] News task completed: {task_id}")
             return {"success": True, "wordpress_post_id": result}
         else:
-            queue_manager.update_task_status(task_id, "failed", {"error": "Pipeline failed"})
             logger.error(f"[CELERY] News task failed: {task_id}")
             return {"success": False, "error": "Pipeline failed"}
 
     except Exception as e:
         from core.queue_manager import queue_manager
-        queue_manager.update_task_status(task_id, "failed", {"error": str(e)})
         logger.error(f"[CELERY] News task error: {task_id} - {e}")
         raise

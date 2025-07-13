@@ -22,6 +22,7 @@ celery_app.conf.update(
     task_routes={
         'core.tasks.process_copywriter_request': {'queue': 'copywriter'},
         'core.tasks.communicate_with_agent': {'queue': 'communication'},
+        'core.tasks.process_news_copywriter': {'queue': 'copywriter'},  # ADD THIS LINE
         'core.tasks.wordpress_publish': {'queue': 'publishing'},
     },
     worker_concurrency=2,

@@ -20,14 +20,12 @@ class CopywriterRequest(BaseModel):
     number_of_journalists: int = Field(default=3)
     max_turns: int = Field(default=3)
 
+    @property
+    def banner_image(self) -> str:
+        """Extract banner image from keyword_data"""
+        return self.keyword_data.get("banner_image", "")
 
-@property
-def banner_image(self) -> str:
-    """Extract banner image from keyword_data"""
-    return self.keyword_data.get("banner_image", "")
-
-
-@property
-def source_content(self) -> str:
-    """Extract source content from keyword_data"""
-    return self.keyword_data.get("source_content", "")
+    @property
+    def source_content(self) -> str:
+        """Extract source content from keyword_data"""
+        return self.keyword_data.get("source_content", "")
