@@ -67,27 +67,18 @@ class QueueManager:
 
     def queue_news_task(self, request_data: dict, priority: int = 5) -> str:
         """Queue a news article generation task"""
-        task_id = f"news_{uuid.uuid4()}"
+        from core.tasks import process_news_copywriter  # Import the task
+
+        task_id = str(uuid.uuid4())  # Remove the "news_" prefix to match other tasks
 
         try:
-            # Use the same pattern as existing tasks
-            result = self.celery_app.send_task(
-                'core.tasks.process_news_copywriter',  # Task name
+            # Use apply_async like other tasks in the same class
+            result = process_news_copywriter.apply_async(
                 args=[task_id, request_data],
-                task_id=task_id,
                 priority=priority,
-                routing_key='copywriter'
+                queue='copywriter',  # Use queue instead of routing_key
+                task_id=task_id
             )
-
-            # Store task info using existing pattern
-            self.active_tasks[task_id] = {
-                "task_id": task_id,
-                "type": AgentType.COPYWRITER_NEWS.value,  # We'll need to add this enum
-                "status": "queued",
-                "created_at": datetime.now().isoformat(),
-                "celery_task_id": result.id,
-                "request_data": request_data
-            }
 
             logger.info(f"[QUEUE] Queued news task: {task_id}")
             return task_id
@@ -95,6 +86,7 @@ class QueueManager:
         except Exception as e:
             logger.error(f"[QUEUE] Error queuing news task: {e}")
             raise
+
 
     def get_task_status(self, task_id: str) -> dict:
         """Get task status"""

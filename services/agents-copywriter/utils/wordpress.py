@@ -236,28 +236,34 @@ def render_guide_news_article(data: dict) -> str:
     if 'description' in headings_content:
         content_dict = headings_content['description']
 
-        for heading_key, heading_data in content_dict.items():
-            if isinstance(heading_data, dict):
-                # Check if there's a 'heading' field, otherwise use the key
-                heading = heading_data.get('heading', heading_key)
-                paragraph = heading_data.get('paragraph')
-                structure_aids = heading_data.get('structure_aids')
+        # ADD THIS CHECK: Make sure content_dict is a dictionary
+        if isinstance(content_dict, dict):
+            for heading_key, heading_data in content_dict.items():
+                if isinstance(heading_data, dict):
+                    # Check if there's a 'heading' field, otherwise use the key
+                    heading = heading_data.get('heading', heading_key)
+                    paragraph = heading_data.get('paragraph')
+                    structure_aids = heading_data.get('structure_aids')
 
-                # Always create the heading
-                md += f"## {heading}\n\n"
+                    # Always create the heading
+                    md += f"## {heading}\n\n"
 
-                # Add paragraph content if it exists
-                if paragraph:
-                    md += f"{format_text_with_structure(paragraph)}\n\n"
+                    # Add paragraph content if it exists
+                    if paragraph:
+                        md += f"{format_text_with_structure(paragraph)}\n\n"
 
-                # Add structure aids (lists, tables, etc.)
-                if structure_aids:
-                    md += f"{format_text_with_structure(structure_aids)}\n\n"
+                    # Add structure aids (lists, tables, etc.)
+                    if structure_aids:
+                        md += f"{format_text_with_structure(structure_aids)}\n\n"
 
-            elif isinstance(heading_data, str):
-                # Direct string content
-                md += f"## {heading_key}\n\n"
-                md += f"{format_text_with_structure(heading_data)}\n\n"
+                elif isinstance(heading_data, str):
+                    # Direct string content
+                    md += f"## {heading_key}\n\n"
+                    md += f"{format_text_with_structure(heading_data)}\n\n"
+        else:
+            # If description is a string, treat it as a single content block
+            md += f"## Description\n\n"
+            md += f"{format_text_with_structure(content_dict)}\n\n"
 
     # Handle direct structure: headings_content.{items}
     else:

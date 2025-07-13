@@ -3,32 +3,17 @@
   "introduction": {
     "teaser": "Write a teaser paragraph (2–3 sentences) introducing the topic and setting the context.",
     "nlp_answer": "Write a concise (max 300 characters) NLP-optimized answer. If the title is a question, bold the actual answer.",
-    "extended_answer": "Restate the question clearly. Provide a detailed, direct answer. If the article is list-based, describe the first item. No ambiguity, no yes/no-only answers.",
     "hook2": "Write 2–3 sentences that motivate the reader to continue reading — promise value or surprising info coming next."
   },
   "headings_content": {
     "description": "For each heading in the provided list, write one clear and structured response. Do NOT change the heading text. Use the following rules to write each section.",
     "template": {
       "heading": "Do not modify — this field will be filled with the provided heading",
-      "paragraph": "Write 150–200 words expanding on this heading. Start by restating it in context. Avoid redundancy with previous sections.",
-      "reader_expectation": "Anticipate and respond to the reader’s likely question after the previous section. Keep the flow logical.",
-      "structure_aids": "If useful, include one of the following: a list, short quote, table, example or reference to an image. Avoid blocks longer than 3 lines.",
-      "clarity": "Avoid vague filler text. Be precise and helpful."
+      "paragraph": "Write 150–200 words expanding on this heading. Start by restating it in context. Avoid redundancy with previous sections."
     }
   },
   "conclusion": {
     "summary": "Wrap up the article with ~150 words. Recap the overall value, what the reader learned, and reassert the key message.",
     "closing_sentence": "Finish with a positive or actionable sentence that encourages or reassures the reader (e.g., 'Now you know everything to...')."
-  },
-  "faq_description": "Answer common related questions that may still be in the reader’s mind after reading the article.",
-  "faq": [
-    {
-      "question": "Frequently asked question 1",
-      "answer": "Answer in about 150 words with clarity and usefulness."
-    },
-    {
-      "question": "Frequently asked question 2",
-      "answer": "Another detailed answer to a common concern."
-    }
-  ]
+  }
 }

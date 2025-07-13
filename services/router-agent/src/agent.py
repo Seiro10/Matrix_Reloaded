@@ -1537,6 +1537,7 @@ Generate the following fields:
 3. meta_description: A compelling 150-160 character meta description for SEO
 4. language: Auto-detect language (FR, EN, ES, etc.)
 5. real_title: Extract the REAL news title from the content (not the generic RSS title)
+6. description: 1-3 comprehensives headlines, reflecting the most important informations of the post.
 
 Respond with ONLY a valid JSON object containing these fields."""
 
