@@ -88,3 +88,4 @@ python-slugify==8.0.4
 tavily-python==0.7.5
 celery[redis]
 redis
+boto3

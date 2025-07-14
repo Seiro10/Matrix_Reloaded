@@ -25,7 +25,7 @@ class ContentProcessor:
             destination_website=news_item.destination_website,
             theme=news_item.theme,
             url=news_item.url,
-            s3_image_urls=[]  # Will be populated by the Celery task
+            s3_image_urls=[]
         )
 
         logger.info(f"[DEBUG] Prepared payload for copywriter:")
@@ -103,7 +103,8 @@ class ContentProcessor:
                 "main_image": payload.s3_image_urls[0] if payload.s3_image_urls else (
                     payload.images[0] if payload.images else ""),
                 "banner_image": payload.banner_image,
-                "post_type": "News"
+                "post_type": "News",
+                "original_post_url": payload.original_post_url
             }
 
             logger.info("[DEBUG] === SENDING TO ROUTER AGENT ===")
