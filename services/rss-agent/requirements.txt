@@ -18,3 +18,5 @@ python-dotenv==1.0.0
 playwright==1.40.0
 Pillow==10.1.0
 pillow-avif-plugin==1.4.3
+langchain
+langsmith

@@ -84,6 +84,10 @@ services:
       # Agent URLs
       - METADATA_GENERATOR_URL=http://metadata-generator:8084
       - REWRITER_AGENT_URL=http://rewriter-main:8085
+      - AWS_ACCESS_KEY_ID=${AWS_ACCESS_KEY_ID}
+      - AWS_SECRET_ACCESS_KEY=${AWS_SECRET_ACCESS_KEY}
+      - S3_BUCKET_NAME=${S3_BUCKET_NAME}
+      - S3_REGION=${S3_REGION}
     volumes:
       - copywriter_agent_logs:/app/logs
       - copywriter_agent_temp:/app/temp
@@ -123,6 +127,10 @@ services:
       # Agent URLs
       - METADATA_GENERATOR_URL=http://metadata-generator:8084
       - REWRITER_AGENT_URL=http://rewriter-main:8085
+      - AWS_ACCESS_KEY_ID=${AWS_ACCESS_KEY_ID}
+      - AWS_SECRET_ACCESS_KEY=${AWS_SECRET_ACCESS_KEY}
+      - S3_BUCKET_NAME=${S3_BUCKET_NAME}
+      - S3_REGION=${S3_REGION}
     volumes:
       - copywriter_agent_logs:/app/logs
       - copywriter_agent_temp:/app/temp
@@ -145,6 +153,11 @@ services:
       interval: 30s
       timeout: 10s
       retries: 3
+    environment:
+      - AWS_ACCESS_KEY_ID=${AWS_ACCESS_KEY_ID}
+      - AWS_SECRET_ACCESS_KEY=${AWS_SECRET_ACCESS_KEY}
+      - S3_BUCKET_NAME=${S3_BUCKET_NAME}
+      - S3_REGION=${S3_REGION}
 
   # NEW Metadata Generator Agent
   metadata-generator:
@@ -158,6 +171,10 @@ services:
       - PORT=8084
       - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY}
       - COPYWRITER_AGENT_URL=http://copywriter-agent:8083
+      - LANGCHAIN_API_KEY=${LANGCHAIN_API_KEY}
+      - LANGSMITH_ENDPOINT=${LANGSMITH_ENDPOINT}
+      - LANGCHAIN_TRACING_V2=true
+      - LANGCHAIN_PROJECT=${LANGCHAIN_PROJECT}
     volumes:
       - metadata_generator_logs:/app/logs
       - metadata_generator_temp:/app/temp
@@ -191,6 +208,10 @@ services:
       - AWS_SECRET_ACCESS_KEY=${AWS_SECRET_ACCESS_KEY}
       - S3_BUCKET_NAME=${S3_BUCKET_NAME}
       - S3_REGION=${S3_REGION}
+      - LANGCHAIN_API_KEY=${LANGCHAIN_API_KEY}
+      - LANGSMITH_ENDPOINT=${LANGSMITH_ENDPOINT}
+      - LANGCHAIN_TRACING_V2=true
+      - LANGCHAIN_PROJECT=${LANGCHAIN_PROJECT}
     volumes:
       - rss_agent_logs:/app/logs
       - rss_agent_data:/app/data
@@ -221,6 +242,10 @@ services:
       - AWS_SECRET_ACCESS_KEY=${AWS_SECRET_ACCESS_KEY}
       - S3_BUCKET_NAME=${S3_BUCKET_NAME}
       - S3_REGION=${S3_REGION}
+      - LANGCHAIN_API_KEY=${LANGCHAIN_API_KEY}
+      - LANGSMITH_ENDPOINT=${LANGSMITH_ENDPOINT}
+      - LANGCHAIN_TRACING_V2=true
+      - LANGCHAIN_PROJECT=${LANGCHAIN_PROJECT}
     networks:
       - content-agents
     volumes:
@@ -247,6 +272,10 @@ services:
       - AWS_SECRET_ACCESS_KEY=${AWS_SECRET_ACCESS_KEY}
       - S3_BUCKET_NAME=${S3_BUCKET_NAME}
       - S3_REGION=${S3_REGION}
+      - LANGCHAIN_API_KEY=${LANGCHAIN_API_KEY}
+      - LANGSMITH_ENDPOINT=${LANGSMITH_ENDPOINT}
+      - LANGCHAIN_TRACING_V2=true
+      - LANGCHAIN_PROJECT=${LANGCHAIN_PROJECT}
     volumes:
       - rss_agent_logs:/app/logs
       - rss_agent_data:/app/data

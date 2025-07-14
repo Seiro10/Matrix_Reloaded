@@ -1,15 +1,16 @@
 from writing.news_nodes import generate_news_node
 from writing.writer_nodes import optimize_article
-from utils.wordpress import get_jwt_token, post_article_to_wordpress, render_report_to_markdown, markdown_to_html
+from utils.wordpress import get_jwt_token, post_article_to_wordpress, render_report_to_markdown, markdown_to_html, \
+    post_article_to_wordpress_with_image  # ADD THIS
 from utils.prompts import load_prompt_template
 import os
 import json
 import re
 
 
-def publish_to_wordpress(article, metadata, banner_image=None):
+def publish_to_wordpress(article, metadata, banner_image=None, original_post_url=None):
     """
-    Handle WordPress publishing with optional banner image
+    Handle WordPress publishing with optional banner image and original URL
     """
     # Authenticate
     USERNAME = os.getenv("USERNAME_WP")
@@ -29,19 +30,21 @@ def publish_to_wordpress(article, metadata, banner_image=None):
             print(f"[ERROR] Failed to parse article: {e}")
             return None
     else:
-        parsed_article = article
+        parsed_article = article.copy()  # Make a copy to avoid modifying original
 
     # Add metadata for renderer
     parsed_article['post_type'] = metadata.post_type
+
+    # Add original post URL for WordPress meta (but don't include in content)
+    if original_post_url:
+        parsed_article['original_post_url'] = original_post_url
+        print(f"[DEBUG] 🔗 Added original post URL: {original_post_url}")
 
     # Convert to HTML
     markdown = render_report_to_markdown(parsed_article)
     html = markdown_to_html(markdown)
 
-    # IMPORT THE NEW FUNCTION
-    from utils.wordpress import post_article_to_wordpress_with_image
-
-    # Publish with banner image - THIS IS THE KEY FIX
+    # Publish with banner image
     post_id = post_article_to_wordpress_with_image(parsed_article, token, html, banner_image)
     return post_id
 
@@ -81,6 +84,13 @@ def run_news_article_pipeline(request):
         print("[ERROR] ❌ Failed to optimize article")
         return None
 
-    # Step 3: WordPress publishing WITH BANNER IMAGE
+    # Step 3: WordPress publishing WITH BANNER IMAGE AND ORIGINAL URL
     print(f"[DEBUG] Publishing to WordPress with banner: {request.banner_image}")
-    return publish_to_wordpress(optimized_article, metadata, request.banner_image)
+    print(f"[DEBUG] Original post URL: {request.keyword_data.get('original_post_url', 'Not found')}")
+
+    return publish_to_wordpress(
+        optimized_article,
+        metadata,
+        request.banner_image,
+        request.keyword_data.get("original_post_url")
+    )

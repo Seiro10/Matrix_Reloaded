@@ -11,6 +11,10 @@ import markdown
 from slugify import slugify
 import ast
 from typing import List
+import tempfile
+import boto3
+from botocore.exceptions import NoCredentialsError, ClientError
+from urllib.parse import urlparse
 
 
 def render_structured_content_blocks(blocks: List) -> str:
@@ -229,41 +233,40 @@ def render_guide_news_article(data: dict) -> str:
     if intro.get('hook2'):
         md += f"{format_text_with_structure(intro['hook2'])}\n\n"
 
-    # 3. Headings Content (main content for guide/news)
+    # 3. Handle headings_content - FIXED FOR NEWS STRUCTURE
     headings_content = data.get('headings_content', {})
 
+    # Handle template array structure (news_fr.json format)
+    if 'template' in headings_content and isinstance(headings_content['template'], list):
+        for section in headings_content['template']:
+            if isinstance(section, dict):
+                heading = section.get('heading', '')
+                paragraph = section.get('paragraph', '')
+
+                if heading:
+                    md += f"## {heading}\n\n"
+                if paragraph:
+                    md += f"{format_text_with_structure(paragraph)}\n\n"
+
     # Handle nested structure: headings_content.description.{items}
-    if 'description' in headings_content:
+    elif 'description' in headings_content and isinstance(headings_content['description'], dict):
         content_dict = headings_content['description']
 
-        # ADD THIS CHECK: Make sure content_dict is a dictionary
-        if isinstance(content_dict, dict):
-            for heading_key, heading_data in content_dict.items():
-                if isinstance(heading_data, dict):
-                    # Check if there's a 'heading' field, otherwise use the key
-                    heading = heading_data.get('heading', heading_key)
-                    paragraph = heading_data.get('paragraph')
-                    structure_aids = heading_data.get('structure_aids')
+        for heading_key, heading_data in content_dict.items():
+            if isinstance(heading_data, dict):
+                heading = heading_data.get('heading', heading_key)
+                paragraph = heading_data.get('paragraph')
+                structure_aids = heading_data.get('structure_aids')
 
-                    # Always create the heading
-                    md += f"## {heading}\n\n"
+                md += f"## {heading}\n\n"
+                if paragraph:
+                    md += f"{format_text_with_structure(paragraph)}\n\n"
+                if structure_aids:
+                    md += f"{format_text_with_structure(structure_aids)}\n\n"
 
-                    # Add paragraph content if it exists
-                    if paragraph:
-                        md += f"{format_text_with_structure(paragraph)}\n\n"
-
-                    # Add structure aids (lists, tables, etc.)
-                    if structure_aids:
-                        md += f"{format_text_with_structure(structure_aids)}\n\n"
-
-                elif isinstance(heading_data, str):
-                    # Direct string content
-                    md += f"## {heading_key}\n\n"
-                    md += f"{format_text_with_structure(heading_data)}\n\n"
-        else:
-            # If description is a string, treat it as a single content block
-            md += f"## Description\n\n"
-            md += f"{format_text_with_structure(content_dict)}\n\n"
+            elif isinstance(heading_data, str):
+                md += f"## {heading_key}\n\n"
+                md += f"{format_text_with_structure(heading_data)}\n\n"
 
     # Handle direct structure: headings_content.{items}
     else:
@@ -278,10 +281,8 @@ def render_guide_news_article(data: dict) -> str:
 
                 if heading:
                     md += f"## {heading}\n\n"
-
                 if paragraph:
                     md += f"{format_text_with_structure(paragraph)}\n\n"
-
                 if structure_aids:
                     md += f"{format_text_with_structure(structure_aids)}\n\n"
 
@@ -495,6 +496,13 @@ def post_article_to_wordpress_with_image(article_json: dict, jwt_token: str, htm
         "status": "private"
     }
 
+    # Add original post URL as meta if available - but DON'T include in content
+    if "original_post_url" in article_json and article_json["original_post_url"]:
+        payload["meta"] = {
+            "original_post_url": article_json["original_post_url"]
+        }
+        print(f"[DEBUG] 🔗 Added original post URL as meta: {article_json['original_post_url']}")
+
     # Step 1: Create the post
     try:
         print(f"[DEBUG] ➕ Creating WordPress post...")
@@ -506,7 +514,29 @@ def post_article_to_wordpress_with_image(article_json: dict, jwt_token: str, htm
         # Step 2: Upload and set banner image if provided
         if banner_image and article_id:
             print(f"[DEBUG] 🖼️ Setting banner image: {banner_image}")
-            set_featured_image(article_id, banner_image, jwt_token)
+
+            # Check if banner_image is a URL or local path
+            image_path = banner_image
+            cleanup_needed = False
+
+            if banner_image.startswith('http'):
+                # Download image from URL
+                image_path = download_image_from_url(banner_image)
+                cleanup_needed = True
+                if not image_path:
+                    print(f"[WARNING] ⚠️ Failed to download banner image, skipping")
+                    return article_id
+
+            # Set as featured image
+            set_featured_image(article_id, image_path, jwt_token)
+
+            # Clean up downloaded file if needed
+            if cleanup_needed and image_path and os.path.exists(image_path):
+                try:
+                    os.unlink(image_path)
+                    print(f"[DEBUG] 🗑️ Cleaned up temporary image file")
+                except:
+                    pass
 
         return article_id
 
@@ -680,3 +710,62 @@ def format_table_properly(table_lines: list) -> list:
         formatted_lines.append(row)
 
     return formatted_lines
+
+
+def download_image_from_url(image_url: str) -> str:
+    """Download image from S3 bucket and return local path"""
+    try:
+        print(f"[DEBUG] 📥 Downloading image from S3: {image_url}")
+
+        # Handle different S3 URL formats
+        if 'matrix-reloaded-rss-img-bucket.s3.eu-west-3.amazonaws.com' in image_url:
+            # Format: https://matrix-reloaded-rss-img-bucket.s3.eu-west-3.amazonaws.com/path/to/image.jpg
+            object_key = image_url.split('matrix-reloaded-rss-img-bucket.s3.eu-west-3.amazonaws.com/')[1]
+        elif 's3://matrix-reloaded-rss-img-bucket/' in image_url:
+            # Format: s3://matrix-reloaded-rss-img-bucket/path/to/image.jpg
+            object_key = image_url.replace('s3://matrix-reloaded-rss-img-bucket/', '')
+        else:
+            print(f"[ERROR] ❌ Unrecognized S3 URL format: {image_url}")
+            return None
+
+        print(f"[DEBUG] 🪣 S3 Key: {object_key}")
+
+        # Initialize S3 client
+        s3_client = boto3.client('s3', region_name='eu-west-3')
+
+        # Create temporary file with proper extension
+        file_extension = os.path.splitext(object_key)[1] or '.jpg'
+        with tempfile.NamedTemporaryFile(delete=False, suffix=file_extension) as tmp_file:
+
+            # Download file from S3
+            s3_client.download_fileobj('matrix-reloaded-rss-img-bucket', object_key, tmp_file)
+            print(f"[DEBUG] ✅ S3 image downloaded to: {tmp_file.name}")
+            return tmp_file.name
+
+    except NoCredentialsError:
+        print(f"[ERROR] ❌ AWS credentials not found")
+        return None
+    except ClientError as e:
+        print(f"[ERROR] ❌ S3 error: {e}")
+        return None
+    except Exception as e:
+        print(f"[ERROR] ❌ Error downloading from S3: {e}")
+        return None
+
+
+def download_from_http(http_url: str) -> str:
+    """Download image from regular HTTP/HTTPS URL"""
+    try:
+        response = requests.get(http_url, timeout=30)
+        response.raise_for_status()
+
+        # Create temporary file with proper extension
+        suffix = os.path.splitext(http_url)[1] or '.jpg'
+        with tempfile.NamedTemporaryFile(delete=False, suffix=suffix) as tmp_file:
+            tmp_file.write(response.content)
+            print(f"[DEBUG] ✅ HTTP image downloaded to: {tmp_file.name}")
+            return tmp_file.name
+
+    except Exception as e:
+        print(f"[ERROR] ❌ Error downloading from HTTP: {e}")
+        return None

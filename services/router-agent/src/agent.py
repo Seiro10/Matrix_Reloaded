@@ -1168,6 +1168,9 @@ def create_route_agent_with_hil():
     return compiled_workflow
 
 
+# In services/router-agent/src/agent.py
+# Replace the create_csv_for_rss_content function completely:
+
 def create_csv_for_rss_content(rss_payload, banner_image=None):
     """Create CSV data for RSS content with enhanced metadata"""
 
@@ -1193,7 +1196,7 @@ def create_csv_for_rss_content(rss_payload, banner_image=None):
     # Header must match exactly what metadata generator expects
     header = [
         'KW', 'competition', 'Site', 'language', 'confidence', 'monthly_searches',
-        'people_also_ask', 'forum', 'banner_image', 'post_type', 'original_post_url',  # ADD original_post_url HERE
+        'people_also_ask', 'forum', 'banner_image', 'post_type', 'original_post_url',
         'position1', 'title1', 'url1', 'snippet1', 'content1', 'structure1', 'headlines1', 'metadescription1',
         'position2', 'title2', 'url2', 'snippet2', 'content2', 'structure2', 'headlines2', 'metadescription2',
         'position3', 'title3', 'url3', 'snippet3', 'content3', 'structure3', 'headlines3', 'metadescription3'
@@ -1209,9 +1212,9 @@ def create_csv_for_rss_content(rss_payload, banner_image=None):
         0,  # monthly_searches (not applicable for news)
         '',  # people_also_ask (empty for news)
         '',  # forum (empty for news)
-        rss_payload.banner_image or '',  # banner_image - USE rss_payload.banner_image INSTEAD OF PARAMETER
+        rss_payload.banner_image or '',  # banner_image
         rss_payload.post_type,  # post_type (should be "News")
-        rss_payload.original_post_url,  # original_post_url - ADD THIS LINE
+        rss_payload.original_post_url,  # original_post_url
         # Competitor 1 (RSS content as reference)
         '1',  # position1
         real_title,  # title1 - USE REAL TITLE HERE
@@ -1225,6 +1228,12 @@ def create_csv_for_rss_content(rss_payload, banner_image=None):
         '', '', '', '', '', '', '', '',  # position2 through metadescription2
         '', '', '', '', '', '', '', ''  # position3 through metadescription3
     ]
+
+    # Create CSV content
+    csv_content = io.StringIO()
+    writer = csv.writer(csv_content)
+    writer.writerow(header)
+    writer.writerow(row)
 
     # Save to temporary file
     with tempfile.NamedTemporaryFile(mode='w', delete=False, suffix='.csv', encoding='utf-8') as temp_file:
@@ -1242,8 +1251,8 @@ def create_csv_for_rss_content(rss_payload, banner_image=None):
     logger.info(f"   🏢 Destination: {rss_payload.destination_website}")
     logger.info(f"   📁 File size: {file_size} bytes")
     logger.info(f"   🔗 Source URL: {rss_payload.url}")
-    logger.info(f"   🔗 Original Post URL: {rss_payload.original_post_url}")  # ADD DEBUG LOG
-    logger.info(f"   🖼️ Banner Image: {rss_payload.banner_image}")  # ADD DEBUG LOG
+    logger.info(f"   🔗 Original Post URL: {rss_payload.original_post_url}")
+    logger.info(f"   🖼️ Banner Image: {rss_payload.banner_image}")
     logger.info(f"   📋 CSV has {len(csv_lines)} lines")
 
     return temp_filename

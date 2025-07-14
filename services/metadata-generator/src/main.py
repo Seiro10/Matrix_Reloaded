@@ -126,7 +126,7 @@ def parse_csv_input(file_content: bytes) -> Dict[str, Any]:
             "people_also_ask": row.get("people_also_ask", "").split("; ") if row.get("people_also_ask") else [],
             "forum": row.get("forum", "").split("; ") if row.get("forum") else [],
             "banner_image": banner_image,
-            "original_post_url": original_post_url,  # ADD THIS LINE
+            "original_post_url": original_post_url,
             # Top competitors data - also make optional
             "competitors": [
                 {
