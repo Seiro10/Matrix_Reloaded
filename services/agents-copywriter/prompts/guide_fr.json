@@ -1,5 +1,4 @@
 {
-  "title": "Write a concise, SEO-friendly title for the article using the main keyword. Never rewrite any heading provided below.",
   "introduction": {
     "teaser": "Write a teaser paragraph (2–3 sentences) introducing the topic and setting the context.",
     "nlp_answer": "Write a concise (max 300 characters) NLP-optimized answer. If the title is a question, bold the actual answer.",

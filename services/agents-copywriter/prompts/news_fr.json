@@ -1,5 +1,4 @@
 {
-  "title": "Write a concise, SEO-friendly title for the article using the main keyword. Never rewrite any heading provided below.",
   "introduction": {
     "teaser": "Write a teaser paragraph (2–3 sentences) introducing the topic and setting the context.",
     "nlp_answer": "Write a concise (max 300 characters) NLP-optimized answer. If the title is a question, bold the actual answer.",
@@ -9,11 +8,7 @@
     "description": "For each heading in the provided list, write one clear and structured response. Do NOT change the heading text. Use the following rules to write each section.",
     "template": {
       "heading": "Do not modify — this field will be filled with the provided heading",
-      "paragraph": "Write 150–200 words expanding on this heading. Start by restating it in context. Avoid redundancy with previous sections."
+      "paragraph": "Write 250 - 300 words expanding on this heading. Start by restating it in context. Avoid redundancy with previous sections."
     }
-  },
-  "conclusion": {
-    "summary": "Wrap up the article with ~150 words. Recap the overall value, what the reader learned, and reassert the key message.",
-    "closing_sentence": "Finish with a positive or actionable sentence that encourages or reassures the reader (e.g., 'Now you know everything to...')."
   }
 }

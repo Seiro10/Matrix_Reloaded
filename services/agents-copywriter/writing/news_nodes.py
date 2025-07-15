@@ -38,7 +38,7 @@ def generate_news_node(state):
     ```
 
     ### HEADLINES:
-    You must use these exact headlines:
+    You must use these headlines but you have the right to delete some to avoid repetitions in the content:
     {headlines_text}
 
     ### JSON VALIDATION:
