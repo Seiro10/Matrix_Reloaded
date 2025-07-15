@@ -290,17 +290,6 @@ def render_guide_news_article(data: dict) -> str:
                 md += f"## {key}\n\n"
                 md += f"{format_text_with_structure(content)}\n\n"
 
-    # 4. Conclusion
-    conclusion = data.get('conclusion', {})
-    if conclusion:
-        md += "## Conclusion\n\n"
-
-        if conclusion.get('summary'):
-            md += f"{format_text_with_structure(conclusion['summary'])}\n\n"
-
-        if conclusion.get('closing_sentence'):
-            md += f"{format_text_with_structure(conclusion['closing_sentence'])}\n\n"
-
     # 5. FAQ
     if data.get('faq'):
         md += "## Questions Fréquentes\n\n"
@@ -387,12 +376,6 @@ def render_structured_guide_news_article(data: dict) -> str:
     for section in data.get('main_sections', []):
         md += f"## {section.get('heading', '')}\n\n"
         md += render_structured_content_blocks(section.get('blocks', []))
-
-    # Conclusion
-    conclusion = data.get('conclusion', {})
-    if conclusion:
-        md += f"## {conclusion.get('heading', 'Conclusion')}\n\n"
-        md += render_structured_content_blocks(conclusion.get('blocks', []))
 
     # FAQ
     if data.get('faq'):
