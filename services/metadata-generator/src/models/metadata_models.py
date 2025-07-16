@@ -5,6 +5,7 @@ from typing import List, Dict, Any, Optional
 class MetadataOutput(BaseModel):
     """Output metadata structure"""
     url: str = Field(description="Best possible URL based on competitor and SERP info")
+    title: str = Field(description="Article title optimized for SEO")  # ADD THIS
     main_kw: str = Field(description="Main keyword")
     secondary_kws: List[str] = Field(description="Secondary keywords (max 3)")
     meta_description: str = Field(description="Meta description (160 chars max)")
@@ -20,7 +21,6 @@ class MetadataResponse(BaseModel):
     message: str
     metadata: Optional[MetadataOutput] = None
     error: Optional[str] = None
-    # Add copywriter response fields
     copywriter_response: Optional[Dict[str, Any]] = None
     article_id: Optional[str] = None
     content: Optional[str] = None

@@ -1,7 +1,7 @@
 from writing.news_nodes import generate_news_node
 from writing.writer_nodes import optimize_article
 from utils.wordpress import get_jwt_token, post_article_to_wordpress, render_report_to_markdown, markdown_to_html, \
-    post_article_to_wordpress_with_image  # ADD THIS
+    post_article_to_wordpress_with_image
 from utils.prompts import load_prompt_template
 import os
 import json
@@ -32,6 +32,10 @@ def publish_to_wordpress(article, metadata, banner_image=None, original_post_url
     else:
         parsed_article = article.copy()  # Make a copy to avoid modifying original
 
+    # USE THE TITLE FROM METADATA-GENERATOR
+    parsed_article['title'] = metadata.title
+    print(f"[DEBUG] 🏷️ Using title from metadata: {metadata.title}")
+
     # Add metadata for renderer
     parsed_article['post_type'] = metadata.post_type
 
@@ -59,16 +63,16 @@ def run_news_article_pipeline(request):
     report_structure = load_prompt_template(metadata.post_type)
 
     news_state = {
-        "title": f"News: {metadata.main_kw}",
+        "title": metadata.title,  # Use title from metadata
         "headlines": metadata.headlines,
         "post_type": metadata.post_type,
         "report_structure": report_structure,
-        "source_content": request.source_content,  # Use the property
+        "source_content": request.source_content,
         "audience": request.audience
     }
 
     # Step 1: Generate news article
-    print("[DEBUG] Generating news article...")
+    print(f"[DEBUG] Generating news article with title: {metadata.title}")
     article_result = generate_news_node(news_state)
     article = article_result.get("article")
 

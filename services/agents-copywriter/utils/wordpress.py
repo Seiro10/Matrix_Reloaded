@@ -111,25 +111,27 @@ def format_text_with_structure(text: str) -> str:
 
     return text
 
+
 def render_affiliate_article(data: dict) -> str:
     """
-    Renderer for Affiliate articles (comparisons structure)
+    Renderer for Affiliate articles (comparisons structure) - UPDATED FOR NO TITLE
     """
     md = ""
 
-    # 1. Title
-    if data.get('title'):
-        md += f"# {data['title']}\n\n"
+    # 1. NO TITLE - REMOVED AS REQUESTED
 
     # 2. Introduction
     intro = data.get('introduction', {})
-    if intro.get('paragraphs'):
-        for paragraph in intro['paragraphs']:
-            md += f"{paragraph}\n\n"
+    if intro.get('teaser'):
+        md += f"{format_text_with_structure(intro['teaser'])}\n\n"
 
     if intro.get('bullets'):
         for bullet in intro['bullets']:
             md += f"{bullet}\n\n"
+
+    if intro.get('hook2'):
+        for hook in intro['hook2']:
+            md += f"{format_text_with_structure(hook)}\n\n"
 
     # 3. Comparisons (main content for affiliate)
     for comparison in data.get('comparisons', []):
@@ -210,13 +212,11 @@ def render_affiliate_article(data: dict) -> str:
 
 def render_guide_news_article(data: dict) -> str:
     """
-    Renderer for Guide and News articles (headings_content structure)
+    Renderer for Guide and News articles (headings_content structure) - UPDATED FOR NEWS
     """
     md = ""
 
-    # 1. Title
-    if data.get('title'):
-        md += f"# {data['title']}\n\n"
+    # 1. NO TITLE - REMOVED AS REQUESTED
 
     # 2. Introduction
     intro = data.get('introduction', {})
@@ -233,7 +233,7 @@ def render_guide_news_article(data: dict) -> str:
     if intro.get('hook2'):
         md += f"{format_text_with_structure(intro['hook2'])}\n\n"
 
-    # 3. Handle headings_content - FIXED FOR NEWS STRUCTURE
+    # 3. Handle headings_content - UPDATED FOR BOTH OLD AND NEW FORMATS
     headings_content = data.get('headings_content', {})
 
     # Handle template array structure (news_fr.json format)
@@ -249,26 +249,32 @@ def render_guide_news_article(data: dict) -> str:
                     md += f"{format_text_with_structure(paragraph)}\n\n"
 
     # Handle nested structure: headings_content.description.{items}
-    elif 'description' in headings_content and isinstance(headings_content['description'], dict):
-        content_dict = headings_content['description']
+    elif 'description' in headings_content:
+        # Check if it's the old format with nested items
+        if isinstance(headings_content['description'], dict):
+            content_dict = headings_content['description']
 
-        for heading_key, heading_data in content_dict.items():
-            if isinstance(heading_data, dict):
-                heading = heading_data.get('heading', heading_key)
-                paragraph = heading_data.get('paragraph')
-                structure_aids = heading_data.get('structure_aids')
+            for heading_key, heading_data in content_dict.items():
+                if isinstance(heading_data, dict):
+                    heading = heading_data.get('heading', heading_key)
+                    paragraph = heading_data.get('paragraph')
+                    structure_aids = heading_data.get('structure_aids')
 
-                md += f"## {heading}\n\n"
-                if paragraph:
-                    md += f"{format_text_with_structure(paragraph)}\n\n"
-                if structure_aids:
-                    md += f"{format_text_with_structure(structure_aids)}\n\n"
+                    md += f"## {heading}\n\n"
+                    if paragraph:
+                        md += f"{format_text_with_structure(paragraph)}\n\n"
+                    if structure_aids:
+                        md += f"{format_text_with_structure(structure_aids)}\n\n"
 
-            elif isinstance(heading_data, str):
-                md += f"## {heading_key}\n\n"
-                md += f"{format_text_with_structure(heading_data)}\n\n"
+                elif isinstance(heading_data, str):
+                    md += f"## {heading_key}\n\n"
+                    md += f"{format_text_with_structure(heading_data)}\n\n"
+        else:
+            # Handle single description case
+            if headings_content['description']:
+                md += f"{format_text_with_structure(headings_content['description'])}\n\n"
 
-    # Handle direct structure: headings_content.{items}
+    # Handle direct structure: headings_content.{items} (most common format)
     else:
         for key, content in headings_content.items():
             if key in ['description', 'template']:
@@ -290,7 +296,22 @@ def render_guide_news_article(data: dict) -> str:
                 md += f"## {key}\n\n"
                 md += f"{format_text_with_structure(content)}\n\n"
 
-    # 5. FAQ
+    # 4. Handle conclusion
+    conclusion = data.get('conclusion', {})
+    if conclusion:
+        if isinstance(conclusion, dict):
+            if conclusion.get('summary'):
+                md += f"{format_text_with_structure(conclusion['summary'])}\n\n"
+            if conclusion.get('closing_sentence'):
+                md += f"{format_text_with_structure(conclusion['closing_sentence'])}\n\n"
+        else:
+            md += f"{format_text_with_structure(conclusion)}\n\n"
+
+    # 5. SOURCE SECTION - NEW FOR NEWS ARTICLES
+    if data.get('original_post_url'):
+        md += f"\n\n---\n\n**Source :** {data['original_post_url']}\n\n"
+
+    # 6. FAQ
     if data.get('faq'):
         md += "## Questions Fréquentes\n\n"
 
@@ -307,12 +328,10 @@ def render_guide_news_article(data: dict) -> str:
 
 
 def render_structured_affiliate_article(data: dict) -> str:
-    """Renderer for NEW structured Affiliate articles."""
+    """Renderer for NEW structured Affiliate articles - UPDATED FOR NO TITLE."""
     md = ""
 
-    # Title
-    if data.get('title'):
-        md += f"# {data['title']}\n\n"
+    # NO TITLE - REMOVED AS REQUESTED
 
     # Introduction
     intro = data.get('introduction', {})
@@ -360,12 +379,10 @@ def render_structured_affiliate_article(data: dict) -> str:
 
 
 def render_structured_guide_news_article(data: dict) -> str:
-    """Renderer for NEW structured Guide/News articles."""
+    """Renderer for NEW structured Guide/News articles - UPDATED FOR NO TITLE."""
     md = ""
 
-    # Title
-    if data.get('title'):
-        md += f"# {data['title']}\n\n"
+    # NO TITLE - REMOVED AS REQUESTED
 
     # Introduction
     intro = data.get('introduction', {})
@@ -376,6 +393,10 @@ def render_structured_guide_news_article(data: dict) -> str:
     for section in data.get('main_sections', []):
         md += f"## {section.get('heading', '')}\n\n"
         md += render_structured_content_blocks(section.get('blocks', []))
+
+    # SOURCE SECTION - NEW FOR NEWS ARTICLES
+    if data.get('original_post_url'):
+        md += f"\n\n---\n\n**Source :** {data['original_post_url']}\n\n"
 
     # FAQ
     if data.get('faq'):
@@ -389,7 +410,6 @@ def render_structured_guide_news_article(data: dict) -> str:
     return md.strip()
 
 
-# MODIFY the existing render_report_to_markdown function (keep the same name!)
 def render_report_to_markdown(data: dict) -> str:
     """
     Main renderer that dispatches to the appropriate type-specific renderer
@@ -417,6 +437,13 @@ def render_report_to_markdown(data: dict) -> str:
 
     print(f"[DEBUG] Detected/Using post_type: {post_type}")
 
+    # ADD DEBUG: Print the structure of the data
+    print(f"[DEBUG] Data keys: {list(data.keys())}")
+    if 'headings_content' in data:
+        print(f"[DEBUG] headings_content keys: {list(data['headings_content'].keys())}")
+        if 'description' in data['headings_content']:
+            print(f"[DEBUG] headings_content.description type: {type(data['headings_content']['description'])}")
+
     # NEW: Check if this is the structured format
     if isinstance(data, dict):
         # Check for structured content blocks
@@ -443,12 +470,13 @@ def render_report_to_markdown(data: dict) -> str:
     # Fallback to existing renderers for old format
     print(f"[DEBUG] Using EXISTING renderer for {post_type}")
     if post_type == 'Affiliate':
-        return render_affiliate_article(data)  # YOUR ORIGINAL FUNCTION
+        return render_affiliate_article(data)
     elif post_type in ['Guide', 'News']:
-        return render_guide_news_article(data)  # YOUR ORIGINAL FUNCTION
+        return render_guide_news_article(data)
     else:
         print(f"[WARNING] Unknown post_type '{post_type}', defaulting to Guide/News renderer")
-        return render_guide_news_article(data)  # YOUR ORIGINAL FUNCTION
+        return render_guide_news_article(data)
+
 
 def markdown_to_html(markdown_content: str) -> str:
     return markdown.markdown(markdown_content)
@@ -471,6 +499,10 @@ def post_article_to_wordpress_with_image(article_json: dict, jwt_token: str, htm
         "Authorization": f"Bearer {jwt_token}",
         "Content-Type": "application/json"
     }
+
+    # Expect title to be provided in article_json
+    if "title" not in article_json:
+        raise ValueError("Article JSON must contain a 'title' field")
 
     payload = {
         "title": article_json["title"],
@@ -581,7 +613,7 @@ def get_jwt_token(username, password):
         "password": password
     }
 
-    res = None  # ADD THIS LINE
+    res = None
     try:
         print(f"[DEBUG] Requête POST vers {auth_url} avec user={username}")
         res = requests.post(auth_url, json=payload)
@@ -591,7 +623,7 @@ def get_jwt_token(username, password):
         return token
     except Exception as e:
         print(f"[ERROR] ❌ Échec de récupération du token JWT : {e}")
-        if res is not None:  # This was failing before
+        if res is not None:
             print(f"[DEBUG] ↪ Statut HTTP : {res.status_code}")
             print(f"[DEBUG] ↪ Réponse brute : {res.text}")
         return None
@@ -733,22 +765,4 @@ def download_image_from_url(image_url: str) -> str:
         return None
     except Exception as e:
         print(f"[ERROR] ❌ Error downloading from S3: {e}")
-        return None
-
-
-def download_from_http(http_url: str) -> str:
-    """Download image from regular HTTP/HTTPS URL"""
-    try:
-        response = requests.get(http_url, timeout=30)
-        response.raise_for_status()
-
-        # Create temporary file with proper extension
-        suffix = os.path.splitext(http_url)[1] or '.jpg'
-        with tempfile.NamedTemporaryFile(delete=False, suffix=suffix) as tmp_file:
-            tmp_file.write(response.content)
-            print(f"[DEBUG] ✅ HTTP image downloaded to: {tmp_file.name}")
-            return tmp_file.name
-
-    except Exception as e:
-        print(f"[ERROR] ❌ Error downloading from HTTP: {e}")
         return None

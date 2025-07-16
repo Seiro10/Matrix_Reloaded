@@ -4,6 +4,7 @@ from typing import List, Dict, Any, Optional
 class MetadataInput(BaseModel):
     """Metadata structure from metadata-generator agent"""
     url: str = Field(description="Best possible URL based on competitor and SERP info")
+    title: str = Field(description="Article title optimized for SEO")  # ADD THIS
     main_kw: str = Field(description="Main keyword")
     secondary_kws: List[str] = Field(description="Secondary keywords (max 3)")
     meta_description: str = Field(description="Meta description (160 chars max)")

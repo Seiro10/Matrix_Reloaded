@@ -26,7 +26,7 @@ def run_full_article_pipeline(request: CopywriterRequest):  # Remove async
     # Step 1: Journalist team creation using metadata
     setup = journalist_team_graph.invoke({
         "topic": metadata.main_kw,
-        "title": f"Les meilleures {metadata.main_kw} en 2025",  # Generate title from main keyword
+        "title": metadata.title,  # Use title from metadata instead of generating
         "type": metadata.post_type,
         "keywords": [metadata.main_kw] + metadata.secondary_kws,
         "team_title": metadata.headlines[:3],  # Use first 3 headlines as team roles
@@ -61,7 +61,7 @@ def run_full_article_pipeline(request: CopywriterRequest):  # Remove async
 
     # Step 3: Merge all interviews into one article
     merge_state = {
-        "title": f"Les meilleures {metadata.main_kw} en 2025",
+        "title": metadata.title,  # Use title from metadata
         "sections": all_sections,
         "audience": request.audience,
         "report_structure": report_structure,
@@ -118,9 +118,11 @@ def run_full_article_pipeline(request: CopywriterRequest):  # Remove async
 
     # Step 8: Convert to markdown and publish
     try:
-        # Add post_type to the parsed article for the renderer
+        # Add post_type and title to the parsed article for the renderer
         if isinstance(parsed_article, dict):
             parsed_article['post_type'] = metadata.post_type
+            parsed_article['title'] = metadata.title  # ADD TITLE BEFORE RENDER
+            print(f"[DEBUG] 🏷️ Using title from metadata: {metadata.title}")
 
         markdown = render_report_to_markdown(parsed_article)
         html = markdown_to_html(markdown)

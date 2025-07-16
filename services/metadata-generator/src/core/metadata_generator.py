@@ -182,26 +182,29 @@ Competitor {i + 1}:
     if post_type_from_input == "News":
         print(f"🏷️  Using NEWS-specific prompt")
         keyword_instruction = """1. url: Create a clean URL from the news title
-2. main_kw: Leave as empty string ""
-3. secondary_kws: Leave as empty array []"""
+2. title: Create a compelling news headline (50-60 chars)
+3. main_kw: Leave as empty string ""
+4. secondary_kws: Leave as empty array []"""
         content_type_instruction = "- This is a NEWS article from RSS feed"
-        post_type_instruction = "4. post_type: MUST BE EXACTLY: News"
+        post_type_instruction = "5. post_type: MUST BE EXACTLY: News"
     elif post_type_from_input:
         print(f"🏷️  Using FORCED post_type: {post_type_from_input}")
         keyword_instruction = """1. url: A clean, SEO-friendly URL path
-2. main_kw: The primary focus keyword
-3. secondary_kws: 2-3 related keywords"""
+2. title: Create an SEO-optimized title (50-60 chars) with main keyword
+3. main_kw: The primary focus keyword
+4. secondary_kws: 2-3 related keywords"""
         content_type_instruction = f"- FORCED CONTENT TYPE: {post_type_from_input} (DO NOT CHANGE THIS)"
-        post_type_instruction = f"4. post_type: MUST BE EXACTLY: {post_type_from_input}"
+        post_type_instruction = f"5. post_type: MUST BE EXACTLY: {post_type_from_input}"
     else:
         print("🏷️  No post_type provided, using LLM detection")
         keyword_instruction = """1. url: A clean, SEO-friendly URL path
-2. main_kw: The primary focus keyword
-3. secondary_kws: 2-3 related keywords"""
+2. title: Create an SEO-optimized title (50-60 chars) with main keyword
+3. main_kw: The primary focus keyword
+4. secondary_kws: 2-3 related keywords"""
         content_type_instruction = """- If source_content is provided, this is likely a NEWS article
     - If competitors show product comparisons/reviews, this might be AFFILIATE content
     - Otherwise, it's likely a GUIDE article"""
-        post_type_instruction = '4. post_type: "News", "Affiliate", or "Guide" based on content analysis'
+        post_type_instruction = '5. post_type: "News", "Affiliate", or "Guide" based on content analysis'
 
     system_prompt = f"""You are a SEO metadata expert that creates optimal metadata for articles.
 
@@ -217,8 +220,15 @@ Competitor {i + 1}:
     Generate the following fields:
     {keyword_instruction}
     {post_type_instruction}
-    5. meta_description: 150-160 characters including main keyword
-    6. language: Auto-detected language code
+    6. meta_description: 150-160 characters including main keyword
+    7. language: Auto-detected language code
+
+    Title Guidelines:
+    - For News: Focus on the news angle, be immediate and engaging
+    - For Affiliate: Include "meilleur", "top", "comparatif" etc.
+    - For Guide: Use "comment", "guide", "tutoriel" etc.
+    - Always include the main keyword naturally
+    - Keep it between 50-60 characters for optimal SEO
 
     Headlines will be provided separately, so don't generate them.
 
@@ -272,6 +282,7 @@ Competitor {i + 1}:
                 raise ValueError("Could not extract valid JSON from LLM response")
 
         print(f"🤖 LLM detected post_type: '{metadata_dict.get('post_type', 'NOT_FOUND')}'")
+        print(f"🤖 LLM generated title: '{metadata_dict.get('title', 'NOT_FOUND')}'")
 
         # FORCE POST_TYPE IF PROVIDED FROM INPUT
         if post_type_from_input:
@@ -294,6 +305,10 @@ Competitor {i + 1}:
         if "meta_description" in metadata_dict and len(metadata_dict["meta_description"]) > 160:
             metadata_dict["meta_description"] = metadata_dict["meta_description"][:157] + "..."
 
+        # Validate title length
+        if "title" in metadata_dict and len(metadata_dict["title"]) > 60:
+            metadata_dict["title"] = metadata_dict["title"][:57] + "..."
+
         # Ensure URL doesn't have domain
         if "url" in metadata_dict:
             url = metadata_dict["url"]
@@ -314,6 +329,7 @@ Competitor {i + 1}:
 
         final_metadata = MetadataOutput(**metadata_dict)
         print(f"🏷️  Final metadata post_type: '{final_metadata.post_type}'")
+        print(f"🏷️  Final metadata title: '{final_metadata.title}'")
         print(f"🏷️  Generated {len(final_metadata.headlines)} headlines")
         return final_metadata
 
@@ -323,10 +339,13 @@ Competitor {i + 1}:
         fallback_post_type = post_type_from_input or "Guide"
         fallback_main_kw = "" if post_type_from_input == "News" else keyword
         fallback_secondary_kws = [] if post_type_from_input == "News" else []
+        fallback_title = f"News: {keyword}" if post_type_from_input == "News" else f"Guide: {keyword}"
 
         print(f"🏷️  Using fallback post_type: '{fallback_post_type}'")
+        print(f"🏷️  Using fallback title: '{fallback_title}'")
         return MetadataOutput(
             url=f"/{keyword.lower().replace(' ', '-')}",
+            title=fallback_title,
             main_kw=fallback_main_kw,
             secondary_kws=fallback_secondary_kws,
             meta_description=f"Découvrez tout sur {keyword} dans notre article complet.",
