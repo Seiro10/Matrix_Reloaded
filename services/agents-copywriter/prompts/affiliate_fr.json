@@ -12,8 +12,8 @@
     {
       "title": "La meilleure souris haut de gamme",
       "product": "Full product name (e.g., Logitech G Pro X Superlight 2)",
-      "description": "Write a short paragraph (~100 words) explaining why this is the best high-end product overall. Describe its top-tier performance, premium build, advanced features, and who it’s best suited for.",
-      "paragraph1": "Describe the product’s ergonomics and design in detail.",
+      "description": "Write a short paragraph (~100 words) explaining why this is the best high-end product overall. Describe its top-tier performance, premium build, advanced features, and who it's best suited for.",
+      "paragraph1": "Describe the product's ergonomics and design in detail.",
       "paragraph2": "Explain which hand sizes and grip styles the product is best suited for.",
       "paragraph3": "Detail the number of buttons, their placement, and usability.",
       "paragraph4": "Analyze the price and how it compares to alternatives.",
@@ -30,7 +30,7 @@
       "title": "La souris gamer au meilleur rapport qualité/prix",
       "product": "Full product name",
       "description": "Same instructions as above, adapted for mid-range products.",
-      "paragraph1": "Describe the product’s ergonomics and design in detail.",
+      "paragraph1": "Describe the product's ergonomics and design in detail.",
       "paragraph2": "Explain which hand sizes and grip styles the product is best suited for.",
       "paragraph3": "Detail the number of buttons, their placement, and usability.",
       "paragraph4": "Analyze the price and how it compares to alternatives.",
@@ -47,7 +47,7 @@
       "title": "La meilleure souris gamer pas chère",
       "product": "Full product name",
       "description": "Same instructions as above, adapted for budget products.",
-      "paragraph1": "Describe the product’s ergonomics and design in detail.",
+      "paragraph1": "Describe the product's ergonomics and design in detail.",
       "paragraph2": "Explain which hand sizes and grip styles the product is best suited for.",
       "paragraph3": "Detail the number of buttons, their placement, and usability.",
       "paragraph4": "Analyze the price and how it compares to alternatives.",
@@ -64,7 +64,7 @@
   "notable_mentions": [
     {
       "title": "La meilleure souris pour le travail et le gaming",
-      "description": "Product that’s best suited for players using their mice for working, in 150 words. Include information about ergonomics, hand shape, grip style, weight, number of buttons, button placement, price, etc."
+      "description": "Product that's best suited for players using their mice for working, in 150 words. Include information about ergonomics, hand shape, grip style, weight, number of buttons, button placement, price, etc."
     },
     {
       "title": "La meilleure souris pour la compétition",
