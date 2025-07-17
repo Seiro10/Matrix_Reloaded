@@ -99,7 +99,7 @@ async def filter_keywords_node(state: dict) -> dict:
         monthly_searches = kw.get("monthly_searches", 0)
 
         # ✅ Accept both LOW and UNKNOWN competition
-        if competition in ["LOW", "UNKNOWN"] and monthly_searches >= 30:
+        if competition in ["LOW", "UNKNOWN"] and monthly_searches >= 0:
             filtered.append(kw["keyword"])
             print(f"[ACCEPT] ✅ '{kw['keyword']}' - {monthly_searches} searches, {competition} competition")
         else:
@@ -107,11 +107,11 @@ async def filter_keywords_node(state: dict) -> dict:
 
     if not filtered:
         print(
-            "[STOP] 🛑 Aucun mot-clé ne passe les filtres (LOW/UNKNOWN competition + ≥30 searches). Arrêt du processus.")
+            "[STOP] 🛑 Aucun mot-clé ne passe les filtres (LOW/UNKNOWN competition + ≥0 searches). Arrêt du processus.")
         state.update({
             "filtered_keywords": [],
             "processing_stopped": True,
-            "no_data_reason": f"No keywords passed filters (LOW/UNKNOWN competition + ≥30 volume) from {len(raw_keywords)} keywords"
+            "no_data_reason": f"No keywords passed filters (LOW/UNKNOWN competition + ≥0 volume) from {len(raw_keywords)} keywords"
         })
         return state
 
