@@ -42,10 +42,15 @@ services:
     environment:
       - ENVIRONMENT=production
       # API Keys
+      - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY}
       - OPENAI_API_KEY=${OPENAI_API_KEY}
       # WordPress Configuration
       - USERNAME_WP=${WORDPRESS_USERNAME}
       - PASSWORD_WP=${WORDPRESS_PASSWORD}
+      - LANGCHAIN_API_KEY=${LANGCHAIN_API_KEY}
+      - LANGSMITH_ENDPOINT=${LANGSMITH_ENDPOINT}
+      - LANGCHAIN_TRACING_V2=true
+      - LANGCHAIN_PROJECT=${LANGCHAIN_PROJECT}
     volumes:
       - rewriter_main_logs:/app/logs
       - rewriter_main_temp:/app/temp

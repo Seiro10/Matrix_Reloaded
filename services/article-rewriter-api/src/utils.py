@@ -2,7 +2,7 @@ import os
 import requests
 from bs4 import BeautifulSoup
 from urllib.parse import urlparse
-
+import logging
 
 def load_html_file(filepath):
     with open(filepath, "r", encoding="utf-8") as f:

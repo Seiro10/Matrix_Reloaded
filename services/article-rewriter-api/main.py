@@ -53,9 +53,11 @@ async def update_blog_article_endpoint(request: dict):
         }
 
     except Exception as e:
+        import traceback
+        error_details = traceback.format_exc()
         print(f"[ERROR] API request failed: {str(e)}")
+        print(f"[ERROR] Full traceback: {error_details}")
         raise HTTPException(status_code=500, detail=f"Erreur interne: {str(e)}")
-
 
 @app.get("/health")
 async def health_check():
