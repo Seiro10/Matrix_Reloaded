@@ -57,11 +57,11 @@ class BaseScraper(ABC):
                     'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
                 })
 
-                # Navigate and wait for content to load
-                page.goto(url, wait_until='networkidle', timeout=30000)
+                # Navigate and wait for content to load - INCREASE TIMEOUT
+                page.goto(url, wait_until='networkidle', timeout=60000)  # Increased from 30s to 60s
 
                 # Wait a bit more for any lazy-loaded content
-                page.wait_for_timeout(2000)
+                page.wait_for_timeout(3000)  # Increased from 2s to 3s
 
                 # Get the final HTML after JS execution
                 html = page.content()
@@ -75,6 +75,7 @@ class BaseScraper(ABC):
             # Fallback to requests if Playwright fails
             logger.info(f"[DEBUG] Falling back to requests for {url}")
             return self._fetch_page_requests(url)
+
 
     def extract_images(self, soup: BeautifulSoup, base_url: str = None) -> List[str]:
         """Extract image URLs from soup with better filtering"""
@@ -200,14 +201,6 @@ class BaseScraper(ABC):
         str]:
         """Extract banner image using stable selectors - with debugging"""
 
-        # Debug: Check if banner-image data-testid exists in HTML
-        html_str = str(soup)
-        if 'data-testid="banner-image"' not in html_str:
-            logger.warning("[DEBUG] data-testid='banner-image' not found in HTML - likely JS-rendered content")
-            logger.info(f"[DEBUG] HTML length: {len(html_str)} chars")
-            # Log first 500 chars to see what we got
-            logger.info(f"[DEBUG] HTML sample: {html_str[:500]}...")
-
         # Strategy 1: Use data-testid (most reliable for modern websites)
         banner_img = soup.find('img', {'data-testid': 'banner-image'})
         if banner_img:
@@ -218,15 +211,17 @@ class BaseScraper(ABC):
                     logger.info(f"[DEBUG] Found banner image using data-testid: {full_url}")
                     return full_url
 
-        # Strategy 2: Use stable CSS class 'banner-image' (fallback)
-        banner_img = soup.find('img', class_='banner-image')
-        if banner_img:
-            src = self._extract_image_src(banner_img)
-            if src:
-                full_url = self._build_full_url(src, base_url)
-                if full_url and self._is_valid_image(full_url):
-                    logger.info(f"[DEBUG] Found banner image using banner-image class: {full_url}")
-                    return full_url
+        # Strategy 2: Look for other banner-related data-testid
+        banner_testids = ['hero-image', 'featured-image', 'main-image', 'header-image']
+        for testid in banner_testids:
+            banner_img = soup.find('img', {'data-testid': testid})
+            if banner_img:
+                src = self._extract_image_src(banner_img)
+                if src:
+                    full_url = self._build_full_url(src, base_url)
+                    if full_url and self._is_valid_image(full_url):
+                        logger.info(f"[DEBUG] Found banner image using data-testid='{testid}': {full_url}")
+                        return full_url
 
         # Strategy 3: Use custom selectors as final fallback
         for selector in banner_selectors:
@@ -245,6 +240,7 @@ class BaseScraper(ABC):
 
         logger.warning("[DEBUG] No valid banner image found with any strategy")
         return None
+
 
     def _extract_image_src(self, img_tag) -> Optional[str]:
         """Extract src from img tag trying multiple attributes"""

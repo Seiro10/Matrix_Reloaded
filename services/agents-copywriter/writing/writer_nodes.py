@@ -132,10 +132,9 @@ def fix_json_content(content: str) -> str:
 
 def optimize_article(article_json, headlines=None):
     llm = ChatAnthropic(
-        model="claude-sonnet-4-20250514",  # Replace with 20250514 if available
-        temperature=0.7,  # Reduced temperature for more stable JSON
+        model="claude-sonnet-4-20250514",
+        temperature=0.3,
         top_p=0.9,
-        max_tokens=4000
     )
 
     # Prepare headlines text for the prompt
@@ -162,16 +161,15 @@ def optimize_article(article_json, headlines=None):
     - Garde un ton naturel : Écris comme tu parles normalement. Tu peux commencer tes phrases par « et » ou « mais ». Exemple : « Et c'est pour ça que c'est important ».
     - Ne donne jamais de prix précis en euros.
 
-
     **IMPORTANT:** 
     - Évite les guillemets non fermés dans ton JSON. Utilise des apostrophes ou des phrases sans guillemets.
     - Garde les listes et tableaux fournis par les experts le plus possible.
+    - Tu DOIS répondre avec un JSON complet et valide. JAMAIS de réponse partielle.
 
     {headlines_text}
 
     Réponds uniquement avec un JSON brut valide, sans texte autour. Assure-toi que toutes les chaînes sont correctement fermées.
-    
-        """
+    """
 
     user_prompt = f"""
     Voici l'article à optimiser :
@@ -181,8 +179,9 @@ def optimize_article(article_json, headlines=None):
     IMPORTANT: Assure-toi que les headlines suivants sont préservés dans l'article final :
     {chr(10).join([f"- {headline}" for headline in headlines]) if headlines else "Aucun headline spécifique fourni"}
 
-    CRITIQUE: Génère un JSON valide sans erreur de syntaxe. Vérifie que tous les guillemets sont fermés.
-        """
+    CRITIQUE: Génère un JSON valide COMPLET sans erreur de syntaxe. Vérifie que tous les guillemets sont fermés.
+    La réponse doit être complète et ne doit jamais s'arrêter au milieu.
+    """
 
     try:
         response = llm.invoke([
@@ -192,6 +191,13 @@ def optimize_article(article_json, headlines=None):
 
         raw = response.content.strip()
         print(f"[DEBUG] 📝 Raw optimizer response length: {len(raw)} chars")
+
+        # Check if response seems truncated or incomplete
+        if len(raw) < 100 or not raw.endswith('}'):
+            print(f"[WARNING] ⚠️ Response seems incomplete (length: {len(raw)})")
+            print(f"[DEBUG] Raw response: {raw}")
+            print("[DEBUG] 🔄 Falling back to original article")
+            return article_json
 
         # 🧹 Nettoyage plus robuste
         raw = re.sub(r"^```json|```$", "", raw, flags=re.MULTILINE).strip()
@@ -205,11 +211,23 @@ def optimize_article(article_json, headlines=None):
             json_str = raw[start_idx:end_idx]
             print(f"[DEBUG] 🔍 Extracted JSON length: {len(json_str)} chars")
 
+            # Validate JSON structure before parsing
+            if not json_str.strip().endswith('}'):
+                print("[WARNING] ⚠️ JSON doesn't end properly")
+                print("[DEBUG] 🔄 Falling back to original article")
+                return article_json
+
             # Additional cleanup for common JSON issues
-            json_str = json_str.replace('\n', ' ')  # Remove newlines that might break strings
             json_str = re.sub(r'\\(?!["\\/bfnrt])', r'\\\\', json_str)  # Fix invalid escapes
 
             parsed = json.loads(json_str)
+
+            # Validate that the parsed result has the expected structure
+            if not isinstance(parsed, dict) or len(parsed) < 2:
+                print("[WARNING] ⚠️ Parsed JSON structure seems incomplete")
+                print("[DEBUG] 🔄 Falling back to original article")
+                return article_json
+
             print("[DEBUG] ✅ Successfully parsed optimized JSON")
             return parsed
         else:
@@ -238,5 +256,39 @@ def optimize_article_node(state):
 
     print(f"[DEBUG] 📋 Optimizing {post_type} article with {len(headlines)} headlines: {headlines}")
 
-    optimized = optimize_article(article, headlines)
+    # Use the retry mechanism instead of direct optimization
+    optimized = optimize_article_with_retry(article, headlines)
     return {"article": optimized, "headlines": headlines, "post_type": post_type}
+
+
+def optimize_article_with_retry(article_json, headlines=None, max_retries=2):
+    """
+    Optimize article with retry mechanism for failed attempts
+    """
+    for attempt in range(max_retries + 1):
+        try:
+            print(f"[DEBUG] 🔄 Optimization attempt {attempt + 1}/{max_retries + 1}")
+            result = optimize_article(article_json, headlines)
+
+            # Check if result is the same as input (fallback was used)
+            if result == article_json:
+                if attempt < max_retries:
+                    print(f"[DEBUG] ⚠️ Fallback used, retrying...")
+                    continue
+                else:
+                    print(f"[DEBUG] ⚠️ Max retries reached, using original article")
+                    return article_json
+            else:
+                print(f"[DEBUG] ✅ Optimization successful on attempt {attempt + 1}")
+                return result
+
+        except Exception as e:
+            print(f"[ERROR] ❌ Optimization attempt {attempt + 1} failed: {e}")
+            if attempt < max_retries:
+                print(f"[DEBUG] 🔄 Retrying...")
+                continue
+            else:
+                print(f"[DEBUG] ⚠️ Max retries reached, using original article")
+                return article_json
+
+    return article_json

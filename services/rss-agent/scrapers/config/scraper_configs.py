@@ -25,19 +25,21 @@ RIOT_SCRAPER_CONFIGS = {
         theme="Gaming",
         max_articles=5,
         banner_selectors=[
-            # Try different approaches for finding banner images
+            # Primary: data-testid selectors
+            'img[data-testid="banner-image"]',
+            'img[data-testid="hero-image"]',
+            'img[data-testid="featured-image"]',
+            # Fallback: content-based selectors
             'img[src*="cmsassets.rgpub.io"]',
             'img[src*="1920x1080"]',
-            'img[src*="images.contentstack.io"]',
-            'img[src*="banner"]',
-            'img[src*="hero"]',
-            'img[src*="featured"]',
-            # Look for large images (common banner sizes)
             'img[src*="1200x"]',
-            'img[src*="1600x"]',
-            'img[src*="1920x"]'
         ],
         article_selectors=[
+            # Primary: data-testid selectors for articles
+            'a[data-testid*="article"]',
+            'a[data-testid*="news"]',
+            'a[data-testid*="post"]',
+            # Fallback: href-based selectors
             'a[href*="/news/"]',
             'a[href*="/fr-fr/news/"]'
         ]
@@ -48,19 +50,21 @@ RIOT_SCRAPER_CONFIGS = {
         theme="Gaming",
         max_articles=3,
         banner_selectors=[
-            # Try different approaches for finding banner images
+            # Primary: data-testid selectors
+            'img[data-testid="banner-image"]',
+            'img[data-testid="hero-image"]',
+            'img[data-testid="featured-image"]',
+            # Fallback: content-based selectors
             'img[src*="cmsassets.rgpub.io"]',
             'img[src*="1920x1080"]',
-            'img[src*="images.contentstack.io"]',
-            'img[src*="banner"]',
-            'img[src*="hero"]',
-            'img[src*="featured"]',
-            # Look for large images (common banner sizes)
             'img[src*="1200x"]',
-            'img[src*="1600x"]',
-            'img[src*="1920x"]'
         ],
         article_selectors=[
+            # Primary: data-testid selectors for articles
+            'a[data-testid*="article"]',
+            'a[data-testid*="news"]',
+            'a[data-testid*="post"]',
+            # Fallback: href-based selectors
             'a[href*="/news/"]',
             'a[href*="/fr-fr/news/"]'
         ]
@@ -71,19 +75,21 @@ RIOT_SCRAPER_CONFIGS = {
         theme="Gaming",
         max_articles=3,
         banner_selectors=[
-            # Try different approaches for finding banner images
+            # Primary: data-testid selectors
+            'img[data-testid="banner-image"]',
+            'img[data-testid="hero-image"]',
+            'img[data-testid="featured-image"]',
+            # Fallback: content-based selectors
             'img[src*="cmsassets.rgpub.io"]',
             'img[src*="1920x1080"]',
-            'img[src*="images.contentstack.io"]',
-            'img[src*="banner"]',
-            'img[src*="hero"]',
-            'img[src*="featured"]',
-            # Look for large images (common banner sizes)
             'img[src*="1200x"]',
-            'img[src*="1600x"]',
-            'img[src*="1920x"]'
         ],
         article_selectors=[
+            # Primary: data-testid selectors for articles
+            'a[data-testid*="article"]',
+            'a[data-testid*="news"]',
+            'a[data-testid*="post"]',
+            # Fallback: href-based selectors
             'a[href*="/news/"]',
             'a[href*="/fr-fr/news/"]'
         ]
@@ -94,19 +100,21 @@ RIOT_SCRAPER_CONFIGS = {
         theme="Gaming",
         max_articles=3,
         banner_selectors=[
-            # Try different approaches for finding banner images
+            # Primary: data-testid selectors
+            'img[data-testid="banner-image"]',
+            'img[data-testid="hero-image"]',
+            'img[data-testid="featured-image"]',
+            # Fallback: content-based selectors
             'img[src*="cmsassets.rgpub.io"]',
             'img[src*="1920x1080"]',
-            'img[src*="images.contentstack.io"]',
-            'img[src*="banner"]',
-            'img[src*="hero"]',
-            'img[src*="featured"]',
-            # Look for large images (common banner sizes)
             'img[src*="1200x"]',
-            'img[src*="1600x"]',
-            'img[src*="1920x"]'
         ],
         article_selectors=[
+            # Primary: data-testid selectors for articles
+            'a[data-testid*="article"]',
+            'a[data-testid*="news"]',
+            'a[data-testid*="post"]',
+            # Fallback: href-based selectors
             'a[href*="/news/"]',
             'a[href*="/fr-fr/news/"]'
         ]
@@ -117,19 +125,21 @@ RIOT_SCRAPER_CONFIGS = {
         theme="Gaming",
         max_articles=3,
         banner_selectors=[
-            # Try different approaches for finding banner images
+            # Primary: data-testid selectors
+            'img[data-testid="banner-image"]',
+            'img[data-testid="hero-image"]',
+            'img[data-testid="featured-image"]',
+            # Fallback: content-based selectors
             'img[src*="cmsassets.rgpub.io"]',
             'img[src*="1920x1080"]',
-            'img[src*="images.contentstack.io"]',
-            'img[src*="banner"]',
-            'img[src*="hero"]',
-            'img[src*="featured"]',
-            # Look for large images (common banner sizes)
             'img[src*="1200x"]',
-            'img[src*="1600x"]',
-            'img[src*="1920x"]'
         ],
         article_selectors=[
+            # Primary: data-testid selectors for articles
+            'a[data-testid*="article"]',
+            'a[data-testid*="news"]',
+            'a[data-testid*="post"]',
+            # Fallback: href-based selectors
             'a[href*="/news/"]',
             'a[href*="/fr-fr/news/"]'
         ]

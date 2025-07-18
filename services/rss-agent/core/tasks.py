@@ -53,8 +53,15 @@ def scrape_website(self, scraper_name: str):
         # Import scrapers
         from scrapers.stuffgaming.unified_riot_scraper import UnifiedRiotScraper
         from scrapers.stuffgaming.test_scraper import TestScraper
+        from scrapers.stuffgaming.blizzard_news_scraper import BlizzardNewsScraper
 
-        scraper = UnifiedRiotScraper(scraper_name)
+        # Choose appropriate scraper
+        if scraper_name == "blizzard_news":
+            scraper = BlizzardNewsScraper()
+        elif scraper_name == "test_scraper":
+            scraper = TestScraper()
+        else:
+            scraper = UnifiedRiotScraper(scraper_name)
 
         news_items = scraper.scrape_news()
 
@@ -75,6 +82,7 @@ def scrape_website(self, scraper_name: str):
 
     except Exception as exc:
         logger.error(f"[DEBUG] Scraping task failed for {scraper_name}: {exc}")
+        logger.error(f"[DEBUG] Exception details: {type(exc).__name__}: {str(exc)}")
         if self.request.retries < self.max_retries:
             logger.info(f"[DEBUG] Retrying in 60 seconds... (attempt {self.request.retries + 1})")
             raise self.retry(countdown=60)
