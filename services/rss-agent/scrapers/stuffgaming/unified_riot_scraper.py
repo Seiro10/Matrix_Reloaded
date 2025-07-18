@@ -89,45 +89,37 @@ class UnifiedRiotScraper(BaseScraper):
         """Enhanced fallback method for article extraction using stable selectors"""
         article_links = []
 
-        # Strategy 1: Look for links containing '/news/' in href
-        news_links = soup.find_all('a', href=lambda x: x and '/news/' in x)
-        for link in news_links:
-            href = link.get('href', '')
-            text = link.get_text(strip=True)
+        # Strategy 1: Use data-testid attributes (most reliable)
+        testid_links = soup.find_all('a', {'data-testid': lambda x: x and 'article' in x.lower()})
+        if testid_links:
+            logger.info(f"[DEBUG] Found {len(testid_links)} links with article data-testid")
+            article_links.extend(testid_links)
 
-            # Filter out unwanted links
-            if (text and len(text) > 10 and
-                    not href.startswith('https://merch.') and
-                    not 'utm_' in href and
-                    not any(skip in href.lower() for skip in ['login', 'register', 'account', 'support'])):
-                article_links.append(link)
+        # Strategy 2: Look for links with news-related data-testid
+        news_testid_links = soup.find_all('a', {'data-testid': lambda x: x and any(
+            keyword in x.lower() for keyword in ['news', 'post', 'story', 'content'])})
+        if news_testid_links:
+            logger.info(f"[DEBUG] Found {len(news_testid_links)} links with news data-testid")
+            for link in news_testid_links:
+                if link not in article_links:
+                    article_links.append(link)
 
-        # Strategy 2: Look for links in news containers
-        news_containers = soup.find_all(['div', 'section'], class_=lambda x: x and 'news' in ' '.join(x).lower())
-        for container in news_containers:
-            links = container.find_all('a', href=True)
-            for link in links:
+        # Strategy 3: Look for links containing '/news/' in href (existing fallback)
+        if not article_links:
+            news_links = soup.find_all('a', href=lambda x: x and '/news/' in x)
+            for link in news_links:
                 href = link.get('href', '')
                 text = link.get_text(strip=True)
 
                 if (text and len(text) > 10 and
-                        ('/news/' in href or '/fr-fr/news/' in href) and
-                        link not in article_links):
-                    article_links.append(link)
-
-        # Strategy 3: Look for article tags with links
-        articles = soup.find_all('article')
-        for article in articles:
-            link = article.find('a', href=True)
-            if link and link not in article_links:
-                href = link.get('href', '')
-                text = link.get_text(strip=True)
-
-                if text and len(text) > 10:
+                        not href.startswith('https://merch.') and
+                        not 'utm_' in href and
+                        not any(skip in href.lower() for skip in ['login', 'register', 'account', 'support'])):
                     article_links.append(link)
 
         logger.info(f"[DEBUG] Enhanced fallback found {len(article_links)} news links")
         return article_links
+
 
     def _extract_article_data(self, link, index) -> NewsItem:
         """Extract data from a news link with banner image support"""

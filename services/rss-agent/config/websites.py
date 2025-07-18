@@ -8,6 +8,7 @@ WEBSITE_DESTINATIONS = {
     "TFT": "Stuffgaming",
     "Wild Rift": "Stuffgaming",
     "Legends of Runeterra": "Stuffgaming",
+    "Blizzard News": "Stuffgaming",
 }
 
 def get_destination_website(source_website: str) -> str:

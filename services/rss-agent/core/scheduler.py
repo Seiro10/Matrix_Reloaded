@@ -15,7 +15,8 @@ class NewsScheduler:
 
         # List of all scrapers to check (unified approach)
         self.scrapers_to_check = [
-            *get_all_scraper_keys()  # All unified Riot scrapers
+            *get_all_scraper_keys(),
+            "blizzard_news"
         ]
 
     async def check_for_updates(self):
